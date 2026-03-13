@@ -1,0 +1,10 @@
+name = "LeanALaCarte"
+version = "0.1.0"
+defaultTargets = ["leanalacarte"]
+
+[[lean_lib]]
+name = "LeanALaCarte"
+
+[[lean_exe]]
+name = "leanalacarte"
+root = "Main"
