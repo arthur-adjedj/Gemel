@@ -11,7 +11,8 @@ First, if we restrict ourselves to the case of constructing a type `B := A + c` 
   - `⟦A.ci⟧ := B.ci`
   - `⟦A.rec motives minors Is major⟧ := B.rec (⟦motives⟧ + holes for potential added motives) (⟦minors⟧ + holes for new constructor(s)) Is ⟦major⟧` (TODO how to manage partial recursor apps ?)
   - Functions that *construct* terms of type *A* Should be trivial to translate, those that *take* a term of type *A* probably recurses on it and may have mappings with holes, including potential holes to the function arguments in case additional info needs to be given for the extended type
-  - Interesting questions may arise around auxiliary functions ,e.g :
+  - For other terms, the translation is applied structurally.s
+  Interesting questions may arise around auxiliary functions ,e.g :
   - `A.casesOn`
   - `foo._match_i` for a function matching on an `A`
   - similarly, `foo.eq_i` and `foo.eq_def`, 
@@ -50,6 +51,17 @@ Questions about syntax:
 - The users should be able to "extend" a library that was not initially built with modularity in mind
 - Hopefully, "modular" blocks should be elaborated incrementally, that's a can of worms I'm very worried of getting into, this would definitely require some help from/communication with sebastian
 
-How should the partial "mappings"/"substitutions" be stored and done ? I know `simp`/typeclasses/`grind` have some system of tabled resolution that should probably be reused here, I've never looked into it in depth, but it looks desireable here.
+How should the partial "mappings"/"substitutions" be stored and applied ? Relying on Lean's `DiscrTree` sounds the most sensible, it is already used in many other systems after all. It might make sense to work from the new `SymM` monad to do all the rewriting. It would also be cheap to do so since expressions in defs/theorems are already maximally shared! A quick look into the internals seem to show "backward rules" as a potential way to do the substitution and add the relevant holes, although it does not seem to allow for "nested" subgoals such as `foo (λ x => ?_)`. How much of an issue is this in practice ?
 
 Other thing: obligations that are "morally the same" should get bundled together rather that expecting users to say the same thing multiple times
+
+Note, one must ensure that an "extended" type must bind the same universes, and live in the same sort as the type(s) it extends.
+
+Users should be able to "discard" now-untrue lemmas/def of a module, and have an error be thrown when the system tries to translate a discarded constant
+Should users be able to extend arbitrary instances of inductive families, and not just straightforward ones, e.g should this be allowed ? I believe so, but I'm worried it could lead to conflicts/diamonds, similarly to what structures already deal with.
+```
+  inductive Foo (A) extends Prod A A where
+    ...
+``` 
+
+important questions: how should a user specify what bundle of inductives+ defs/theorems should be modularly extended ? In particular, we should ensure users to have explicitly specify/extend auxilary/internal lemmas/defs by hand. **Internal details must stay internal**
