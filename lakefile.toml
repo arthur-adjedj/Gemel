@@ -8,3 +8,7 @@ name = "LeanALaCarte"
 [[lean_exe]]
 name = "leanalacarte"
 root = "Main"
+
+[[require]]
+name = "Qq"
+scope = "leanprover-community"

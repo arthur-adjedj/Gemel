@@ -7,9 +7,9 @@ First, let's implement a Rocq à la Carte equivalent framework. This implies pro
 The former is trivial, the latter less so. Design ideas:
 First, if we restrict ourselves to the case of constructing a type `B := A + c` where `A` is a type and `c` a new constructor
 - Initially, provide (potentially partial) mappings from one type to the other, namely:
-  - `⟦A⟧ := B`
+  - `⟦A⟧ := B` 
   - `⟦A.ci⟧ := B.ci`
-  - `⟦A.rec motives minors Is major⟧ := B.rec (⟦motives⟧ + holes for potential added motives) (⟦minors⟧ + holes for new constructor(s)) Is ⟦major⟧` (TODO how to manage partial recursor apps ?)
+  - `⟦A.rec motives minors Is major⟧ := B.rec (⟦motives⟧ + holes for potential added motives) (⟦minors⟧ + holes for new constructor(s)) Is ⟦major⟧` (TODO how to manage partial recursor apps ?)+
   - Functions that *construct* terms of type *A* Should be trivial to translate, those that *take* a term of type *A* probably recurses on it and may have mappings with holes, including potential holes to the function arguments in case additional info needs to be given for the extended type
   - For other terms, the translation is applied structurally.s
   Interesting questions may arise around auxiliary functions ,e.g :
@@ -65,3 +65,21 @@ Should users be able to extend arbitrary instances of inductive families, and no
 ``` 
 
 important questions: how should a user specify what bundle of inductives+ defs/theorems should be modularly extended ? In particular, we should ensure users to have explicitly specify/extend auxilary/internal lemmas/defs by hand. **Internal details must stay internal**
+
+"partial mappings", especially with horizontal extensions, should to be directed by both the type of the original term **and** the resulting type, e.g judgements of the form :
+`Γ ⇒ Δ ⊢ ⟦t : A⟧ ⇒ t' : B`
+where
+`Γ` : The original context
+`Δ` : The translated context
+`t : A`: the term `t` of type `A` which translates to `t'` of type `B`
+e.g wrt extending Lists to `Vec`s
+
+```
+∅ ⇒ ∅ ⊢ ⟦List.rec : (A : Type) → (P : List A → Sort u) → P [] → (∀ hd tl, P tl → P (hd::tl)) → ∀ l, P l⟧
+        ⇒ Vec.rec : (A : Type) → (P : ∀ n, Vec A n → Sort u) → P 0 [] → (∀ n hd tl, P n tl → P (n+1) (hd::tl)) → ∀ n l, P n l
+```
+Given `A : Type`, `P : List A → Sort u`
+
+`A : Type ⇒ ⟦A⟧ : Type ⊢ ⟦P : List A → Sort u⟧ ⇒ ?_ : ∀ n, Vec A n → Sort u` (i.e such a problem should leave a hole rather than try to "translate" an arbitrary `P`)
+However, if `P` is either a constant with a suitable translation (e.g a function that ignores arguments such as `λ l => Nat`), the system *could* try to approximate a translation as `λ _ _ => Nat`, though should still allow the user to customize the motive when the approximation is not right.
+Ideally: translations should be best effort, and backtrack to a suitable place upon failure (e.g when failing inside lambdas, backtrack out of the lambdas to avoid making the user eta-expand his solution if it's not needed). If the translation of a minor of a recursor happens, users should have the option to not just fix the specific minor, but also change the motive(s). 
