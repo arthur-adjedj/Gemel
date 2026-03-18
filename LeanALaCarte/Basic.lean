@@ -45,7 +45,16 @@ where
     | .sort _
     | .lit _ --What if you extend Nat ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
     | .bvar _ | .fvar _ | .mvar _ => pure e
-    | .proj .. => panic! "todo"
+    | .proj tyName idx struct => do
+      if let some _ext := (← read)[tyName]? then
+        /- Plan here:
+           - look into the Expr, make sure its head is a constant that is structureLike (otherwise either throw an exception)
+           - use the corresponding constant as the new head
+           TODO what if the mapping is partial and the type contains holes ? In practice, shouldn't be an issue as said holes would morally be filled as part of the types of the mapped `struct`
+        -/
+        panic! "todo"
+      else
+        return .proj tyName idx (← modmap struct)
     | .letE ..
     | .lam .. =>
       lambdaLetTelescope e fun xs e => withModMappedLctx xs do

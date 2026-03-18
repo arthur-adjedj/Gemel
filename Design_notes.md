@@ -36,7 +36,7 @@ Caveat:
 It might make sense to rely on Lean's `autoParam`s for this.
 - What about holes that are nested in other binders ? e.g in the future for horizontal extensions`⟦f (λ x : A => x⟧ := ⟦f⟧ (λ x : A  => x ?_)`, one must make sure that the scope of the mvar is the expected one.
 
-Once this base system for extensions is built, it *shouldn't* be too hard to add horizontal extensibility since it will "just" amount to having holes in the type and constructors, not just in the recursor.
+Once this base system for extensions is built, it *shouldn't* be too hard to add horizontal extensibility since it will "just" amount to having holes in the type and constructors, not just in the recursor. Adding horizontal extensions implies also allowing users to add or adapt fields of some existing constructors
 
 Questions I haven't thought about:
 - What to do about typeclasses
