@@ -6,6 +6,7 @@ open Lean Meta Elab Command Term
 
 -- TODO manage extensions that different universes than the original type.
 -- This is important eg for cases where users extend a function with additional arguments that require new universes
+/- A modular extension is a term with some loose bvars. The first `numArgs` bvars correspond to the instantiation of the original term's arguments, the others correspond to holes that need to be filled in by users. -/
 structure ModularExtension where
   translation : Expr
   levelParams : List Name
@@ -25,18 +26,19 @@ partial def modmap (e : Expr) : ModularM Expr := do
     -- One might want to, if a constant is not already extended at this points but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
     -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constant topographically to manage this.
     if let some ext := (← read)[fnName]? then
-      unless ext.numArgs == args.size do
-        return (← modmap (← Meta.etaExpand e))
+      unless ext.numArgs < args.size do --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
+        return ← modmap (← Meta.etaExpand e)
       let res := ext.translation
         |>.instantiateLevelParams ext.levelParams lvls
         |>.instantiate (← args.mapM modmap)
       trace[Modular] m!"args instantiated : {res}"
       trace[Modular] m!"numHoles : {ext.numHoles}"
+      -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
       let mvars ← Array.mkM ext.numHoles (mkFreshExprMVar none .synthetic)
       trace[Modular] m!"mvars : {mvars}"
       let res := res.instantiate mvars
       trace[Modular] m!"mvars instantiated : {res}"
-      check res --gives a type to each synthetic mvar introduced, and throws a type-error if the generated term is ill-formed.
+      check res --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
       return res
     else return mkAppN (← go fn) (← args.mapM modmap)
   else return mkAppN (← go fn) (← args.mapM modmap)
