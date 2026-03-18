@@ -22,12 +22,11 @@ partial def modmap (e : Expr) : ModularM Expr := do
   let fn := e.getAppFn
   let args := e.getAppArgs
   if let .const fnName lvls := fn then -- TODO manage universes better
-    trace[Modular] "head is fn {fnName}"
+    -- One might want to, if a constant is not already extended at this points but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
+    -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constant topographically to manage this.
     if let some ext := (← read)[fnName]? then
-      trace[Modular] "found ext for {fnName}"
       unless ext.numArgs == args.size do
         return (← modmap (← Meta.etaExpand e))
-      trace[Modular] "No eta expansion needed yay"
       let res := ext.translation
         |>.instantiateLevelParams ext.levelParams lvls
         |>.instantiate (← args.mapM modmap)
@@ -37,23 +36,22 @@ partial def modmap (e : Expr) : ModularM Expr := do
       trace[Modular] m!"mvars : {mvars}"
       let res := res.instantiate mvars
       trace[Modular] m!"mvars instantiated : {res}"
-      check res --should give a type to each synthetic mvar, and throw a type-error if the generated term is ill-formed.
+      check res --gives a type to each synthetic mvar introduced, and throws a type-error if the generated term is ill-formed.
       return res
     else return mkAppN (← go fn) (← args.mapM modmap)
   else return mkAppN (← go fn) (← args.mapM modmap)
 where
   go e : ModularM Expr := match e with
-    | .sort _ | .lit _ --What if you extend Nat ? you probably want literals to be translated accordingly, but that's an edge-case
+    | .sort _
+    | .lit _ --What if you extend Nat ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
     | .bvar _ | .fvar _ | .mvar _ => pure e
     | .proj .. => panic! "todo"
     | .letE ..
     | .lam .. =>
       lambdaLetTelescope e fun xs e => withModMappedLctx xs do
-        trace[Modular] m!"modmapped fvars : {xs}"
         mkLambdaFVars xs (← modmap e)
     | .forallE .. =>
       forallTelescope e fun xs e => withModMappedLctx xs do
-        trace[Modular] m!"modmapped fvars : {xs}"
         mkForallFVars xs (← modmap e)
     | .mdata _ e => modmap e
     | _ => unreachable!
