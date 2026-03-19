@@ -167,13 +167,13 @@ def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
     return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
   | _ => throwUnsupportedSyntax
 
-
-
 @[modular_elab modular_inductive]
 def elabExtendedInductive : ModularElab := fun stx => do
   let map ← get
   liftTermElabM do
-    let extendedInd ←  elabExtendedInd stx
+    let extendedInd ← elabExtendedInd stx
     let extendedInductive ← extendedInd.toInductiveView map
     addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
+    -- TODO various mkAuxConstructions
+  -- TODO add relevant stuff to the modmap
   -- addInductiveMappings map extendedInductive
