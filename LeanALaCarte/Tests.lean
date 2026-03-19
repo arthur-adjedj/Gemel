@@ -17,16 +17,16 @@ def testmap : ModularMap :=
     |>.insert ``Nat ⟨q(Natt),[], 0, 0⟩
     |>.insert ``Nat.zero ⟨q(Natt.zero),[],0,0⟩
     |>.insert ``Nat.succ ⟨mkApp q(Natt.succ) (mkBVar 0),[],1,0⟩
-    |>.insert ``Nat.rec ⟨mkApp5 (mkConst ``Natt.rec [.param `u]) (mkBVar 0) (mkBVar 1) (mkBVar 2) (mkBVar 4) (mkBVar 3),[`u],4,1⟩
+    |>.insert ``Nat.rec ⟨mkApp5 (mkConst ``Natt.rec [.param `u]) (mkBVar 3) (mkBVar 2) (mkBVar 1) (mkBVar 4) (mkBVar 0),[`u],4,1⟩
 
 elab "#partial_map" e:term : command =>
   liftTermElabM do
     let e ← elabTerm e none
-    let mapped_term ← modmap e |>.run testmap
+    let mapped_term ← modmap testmap e
     logInfo m!"{mapped_term}"
 
 set_option pp.mvars.levels false
--- set_option trace.Modular true in
+
 set_option pp.funBinderTypes true
 /-- info: Natt -/
 #guard_msgs in
