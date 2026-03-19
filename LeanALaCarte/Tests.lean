@@ -25,6 +25,7 @@ elab "#partial_map" e:term : command =>
     let mapped_term ← modmap e |>.run testmap
     logInfo m!"{mapped_term}"
 
+set_option pp.mvars.levels false
 -- set_option trace.Modular true in
 set_option pp.funBinderTypes true
 /-- info: Natt -/
@@ -37,8 +38,7 @@ set_option pp.funBinderTypes true
 #guard_msgs in
 #partial_map Nat.succ
 /--
-info: fun {motive : Natt → Sort ?u.1518} (zero : motive Natt.zero) (succ : (n : Natt) → motive n → motive n.succ)
-    (t : Natt) =>
+info: fun {motive : Natt → Sort _} (zero : motive Natt.zero) (succ : (n : Natt) → motive n → motive n.succ) (t : Natt) =>
   Natt.rec zero succ (?m.3 zero succ t) t
 -/
 #guard_msgs in

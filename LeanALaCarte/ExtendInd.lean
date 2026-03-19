@@ -1,5 +1,6 @@
 import LeanALaCarte.Basic
-open Lean Elab Meta Command
+import Lean.Parser.Command
+open Lean Parser Elab Meta Command
 
 
 /-- Bundle of the various syntax elements of an extended inductive, to be elaborated as an `ExtendedInd` later -/
@@ -35,3 +36,6 @@ def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
   - Add translation of ind type, ind constrs and ind recursors to the modular map
   - Experiment with adding translation for auxiliary defs too
 -/
+
+-- TODO add (ppSpace bracketedBinder)*
+syntax "inductive" ident "extends" ident,+ "where" ctor* :  command

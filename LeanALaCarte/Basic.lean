@@ -19,18 +19,22 @@ abbrev ModularMap := Std.HashMap Name ModularExtension
 abbrev ModularM := ReaderT ModularMap MetaM
 
 partial def modmap (e : Expr) : ModularM Expr := do
+  withIncRecDepth do
   withTraceNode `Modular (λ exn => return m!"{exceptEmoji exn} modmap {e} ⇒ {exn.toOption}") do
   let fn := e.getAppFn
   let args := e.getAppArgs
   if let .const fnName lvls := fn then -- TODO manage universes better
-    -- One might want to, if a constant is not already extended at this points but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
-    -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constant topographically to manage this.
+    -- One might want to, if a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
+    -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
     if let some ext := (← read)[fnName]? then
-      unless ext.numArgs < args.size do --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
+      --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
+      -- TODO what if the term is overapplied ?
+      unless ext.numArgs == args.size do
         return ← modmap (← Meta.etaExpand e)
+      let newArgs ← args.mapM modmap
       let res := ext.translation
         |>.instantiateLevelParams ext.levelParams lvls
-        |>.instantiate (← args.mapM modmap)
+        |>.instantiate newArgs
       trace[Modular] m!"args instantiated : {res}"
       trace[Modular] m!"numHoles : {ext.numHoles}"
       -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
@@ -45,12 +49,12 @@ partial def modmap (e : Expr) : ModularM Expr := do
 where
   go e : ModularM Expr := match e with
     | .sort _
-    | .lit _ --What if you extend Nat ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
+    | .lit _ --What if you extend Nat/String ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
     | .bvar _ | .fvar _ | .mvar _ => pure e
     | .proj tyName idx struct => do
       if let some _ext := (← read)[tyName]? then
         /- Plan here:
-           - look into the Expr, make sure its head is a constant that is structureLike (otherwise either throw an exception)
+           - look into `ext.translation`, make sure its head is a constant that is structureLike (otherwise throw an exception, we cannot produce "projections" for a type that has more than one constructor/is indexed)
            - use the corresponding constant as the new head
            TODO what if the mapping is partial and the type contains holes ? In practice, shouldn't be an issue as said holes would morally be filled as part of the types of the mapped `struct`
         -/
