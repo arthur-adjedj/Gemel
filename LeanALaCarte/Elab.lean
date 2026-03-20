@@ -18,6 +18,9 @@ structure ModularExtension where
   numHoles : Nat
 deriving Inhabited
 
+instance : ToString ModularExtension where
+  toString map := toString map.translation
+
 abbrev ModularMap := Std.HashMap Name ModularExtension
 
 abbrev ModularM := StateT ModularMap MetaM
@@ -51,7 +54,7 @@ instance [Monad m] [MonadRecDepth  m] : MonadRecDepth  (StateT ρ m) where
 def ModularElab := Syntax → ModularElabM Unit
 
 unsafe initialize modularElabAttribute : KeyedDeclsAttribute ModularElab ←
-  mkElabAttribute ModularElab .anonymous `modular_elab ``ModularCommand ``ModularElab "modular command"
+  mkElabAttribute ModularElab .anonymous `modular_elab Name.anonymous ``ModularElab "modular command"
 
 private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                => throwError "unexpected syntax{indentD stx}"
@@ -73,11 +76,20 @@ where go := do
         args.forM elabModularCommand
       else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
         let s ← get
-        elabCommand stx
-          match modularElabAttribute.getEntries (← getEnv) k with
-          | []      =>
+        let env ← getEnv
+        let kNoScopes := k.eraseMacroScopes
+        let elabFns :=
+          let entries := modularElabAttribute.getEntries env k
+          if entries.isEmpty && kNoScopes != k then
+            modularElabAttribute.getEntries env kNoScopes
+          else
+            entries
+        match elabFns with
+        | []      =>
+          elabCommand stx
             throwError "elaboration function for `{k}` has not been implemented"
-          | elabFns => elabModularCommandUsing s stx elabFns
+        | elabFns =>
+          elabModularCommandUsing s stx elabFns
     | _ => throwError "unexpected command"
 
 def elabModularCommands (stxs : Array (TSyntax `modular_command)): ModularElabM Unit :=

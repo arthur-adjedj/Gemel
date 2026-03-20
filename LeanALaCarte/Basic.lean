@@ -9,7 +9,8 @@ partial def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
   if let .const fnName lvls := fn then -- TODO manage universes better
     -- One might want to, if a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
     -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
-    if let some ext := map[fnName]? then
+    let ext? := map[fnName.eraseMacroScopes]?
+    if let some ext := ext? then
       --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
       unless ext.numArgs <= args.size do
         return ← modmap map (← Meta.etaExpand e)
@@ -28,7 +29,7 @@ partial def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
       trace[Modular.Subst] m!"with extra args : {res}"
       check res --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
       return res
-    else return mkAppN (← go fn) (← args.mapM (modmap map))
+    else return mkAppN fn (← args.mapM (modmap map))
   else return mkAppN (← go fn) (← args.mapM (modmap map))
 where
   go e : MetaM Expr := match e with
@@ -36,7 +37,7 @@ where
     | .lit _ --What if you extend Nat/String ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
     | .bvar _ | .fvar _ | .mvar _ => pure e
     | .proj tyName idx struct => do
-      if let some _ext := map[tyName]? then
+      if let some _ext := map[tyName.eraseMacroScopes]? then
         /- Plan here:
            - look into `ext.translation`, make sure its head is a constant that is structureLike (otherwise throw an exception, we cannot produce "projections" for a type that has more than one constructor/is indexed)
            - use the corresponding constant as the new head
