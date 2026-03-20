@@ -97,6 +97,8 @@ modular
 
 end test3
 
+namespace test4
+
 inductive Var (α : Type) where
   | var : α → Var α
 
@@ -117,3 +119,23 @@ modular
 /-- info: Term'.app {α : Type} : Term' α → Term' α → Term' α -/
 #guard_msgs in
 #check Term'.app
+end test4
+
+namespace test5
+
+inductive Ty where
+  | nat : Ty
+  | arr : Ty → Ty → Ty
+
+abbrev Env := List Ty
+
+set_option inductive.autoPromoteIndices false in --Fails otherwise, should it not ?
+inductive Var : (Γ : Env) → Ty → Type
+  | var {Γ t} (n : Nat) (h : Γ[n]? = some t) : Var Γ t
+
+modular
+  inductive Term extends Var where
+    | lam : Term (A::Γ) B → Term Γ (.arr A B)
+    | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
+
+end test5

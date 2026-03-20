@@ -144,6 +144,7 @@ private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (
     let newIndConst := mkConst newIndName (newLevelParams.map .param)
     forallTelescopeReducing indType fun allArgs _ => do
       let params := allArgs.extract 0 numParams
+      let indices := allArgs.extract numParams allArgs.size
       withExplicitToImplicit params do
         let indFamily ← isInductiveFamily params.size indFVar
         ctors.mapM fun ctorStx => withRef ctorStx do
@@ -175,6 +176,7 @@ private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (
               let extraCtorParams ← Term.collectUnassignedMVars (← instantiateMVars type) #[] except
               let type ← mkForallFVars (extraCtorParams ++ ctorParams) type
               let type ← reorderCtorArgs type
+              let type ← mkForallFVars indices type
               let type ← mkForallFVars params type
               let type := type.replace fun
                 | .fvar fvarId =>
@@ -204,19 +206,27 @@ def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
           | _ =>
             throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
         let indVals ← indNames.mapM getConstInfoInduct
-        let {levelParams, type, numParams,  ..} := indVals[0]!
+        let {levelParams, type, numParams := baseNumParams,  ..} := indVals[0]!
         unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type) do
           throwError "invalid types between inductives being extended"
+        unless declaredParams.size <= baseNumParams do
+          throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
         if declaredParams.size > 0 then
-          unless declaredParams.size == numParams do
-            throwError m!"Expected {numParams} parameter binder(s), got {declaredParams.size}"
           let firstArgs := indExprs[0]!.getAppArgs
-          unless firstArgs.size >= numParams do
-            throwError m!"Expected at least {numParams} parameter argument(s) in `extends` target"
-          for i in [:numParams] do
+          unless firstArgs.size >= declaredParams.size do
+            throwError m!"Expected at least {declaredParams.size} parameter argument(s) in `extends` target"
+          for i in [:declaredParams.size] do
             unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
               throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
-        let addedConstrs ← elabExtendedCtors newIndName levelParams type numParams ctors
+        let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
+        let (numParams, addedConstrs) ←
+          if declaredParams.size == 0 && baseNumParams > 0 then
+            try
+              pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
+            catch _ =>
+              pure (0, (← elabExtendedCtors newIndName levelParams type 0 ctors))
+          else
+            pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
         return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
   | _ => throwUnsupportedSyntax
 
