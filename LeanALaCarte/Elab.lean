@@ -57,10 +57,18 @@ unsafe initialize modularElabAttribute : KeyedDeclsAttribute ModularElab ←
   mkElabAttribute ModularElab .anonymous `modular_elab Name.anonymous ``ModularElab "modular command"
 
 private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
-  | []                => throwError "unexpected syntax{indentD stx}"
+  | []                =>
+    withInfoTreeContext
+      (mkInfoTree := fun trees =>
+        pure <| InfoTree.node (Info.ofCommandInfo { elaborator := `no_elab, stx := stx }) trees)
+      (throwError "unexpected syntax{indentD stx}")
   | (elabFn::elabFns) =>
     catchInternalId unsupportedSyntaxExceptionId
-      (do elabFn.value stx)
+      (do
+        withInfoTreeContext
+          (mkInfoTree := fun trees =>
+            pure <| InfoTree.node (Info.ofCommandInfo { elaborator := elabFn.declName, stx := stx }) trees)
+          (elabFn.value stx))
       (fun _ => do set s; elabModularCommandUsing s stx elabFns)
 
 partial def elabModularCommand (stx : Syntax) : ModularElabM Unit :=
@@ -69,11 +77,20 @@ partial def elabModularCommand (stx : Syntax) : ModularElabM Unit :=
   finally
     addTraceAsMessages
 where go := do
+  let rec elabChoiceAux (args : Array Syntax) (i : Nat) : ModularElabM Unit := do
+    if h : i < args.size then
+      catchInternalId unsupportedSyntaxExceptionId
+        (elabModularCommand args[i])
+        (fun _ => elabChoiceAux args (i + 1))
+    else
+      throwUnsupportedSyntax
   withLogging <| withRef stx <| withIncRecDepth <| withFreshMacroScope do
     match stx with
     | Syntax.node _ k args =>
       if k == nullKind then
         args.forM elabModularCommand
+      else if k.toString == "choice" then
+        elabChoiceAux args 0
       else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
         let s ← get
         let env ← getEnv

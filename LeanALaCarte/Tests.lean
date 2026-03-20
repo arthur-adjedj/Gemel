@@ -1,4 +1,5 @@
 import LeanALaCarte.Basic
+import LeanALaCarte.CheckTranslation
 import LeanALaCarte.ExtendInd
 import Lean.Meta.Check
 import Qq
@@ -49,16 +50,31 @@ end tests
 
 namespace test2
 
-set_option trace.Modular.Elab true
-set_option trace.Modular.Subst true
+-- set_option trace.Modular.Elab true
+-- set_option trace.Modular.Subst true
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
+modular
+  /-- info: Natt.succ' : Natt → Natt -/
+  #guard_msgs in
+  #check Natt.succ'
+
+modular
+  /-- info: Nat -/
+  #guard_msgs (check info) in
+  set_option pp.universes true in
+  #check_translation Nat
+
+modular
+  inductive Natt2 extends Nat where
+    | succ' : Natt2 → Natt2
+  /-- info: Natt2 -/
+  #guard_msgs in
+  #check_translation Nat
+
 end test2
-
-
-#check Natt.succ'
 
 namespace test3
 
@@ -89,7 +105,15 @@ modular
     | lam : Term' α → Term' α
     | app : Term' α → Term' α → Term' α
 
+/-- info: Term' (α : Type) : Type -/
+#guard_msgs in
 #check Term'
+/-- info: Term'.var {α : Type} : α → Term' α -/
+#guard_msgs in
 #check Term'.var
+/-- info: Term'.lam {α : Type} : Term' α → Term' α -/
+#guard_msgs in
 #check Term'.lam
+/-- info: Term'.app {α : Type} : Term' α → Term' α → Term' α -/
+#guard_msgs in
 #check Term'.app
