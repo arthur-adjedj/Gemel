@@ -2,8 +2,6 @@ import LeanALaCarte.NewMap
 import LeanALaCarte.ExtendInd
 import LeanALaCarte.CheckTranslation
 
-namespace modDefTests
-
 def base (n : Nat) : Nat := Nat.succ n
 
 modular
@@ -28,17 +26,12 @@ modular
 
 example (n : Nat) : baseWrap' n = Nat.succ n := rfl
 
-namespace inductiveExtension
-
 def idNat (n : Nat) : Nat := n
 
 def zeroNat : Nat := Nat.zero
 
 def stepNat (n : Nat) : Nat := Nat.succ n
 
-set_option pp.match false
-set_option pp.funBinderTypes true
-#print Nat.add
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
@@ -51,16 +44,11 @@ modular
 
   mod_def stepNatt extends stepNat by
     skip
-  set_option trace.Modular.Elab true in
-  set_option trace.Modular.Subst true in
-  mod_def addNatt extends Nat.add by
-    intro a ⟨h₁,h₂⟩
 
-  set_option pp.funBinderTypes true
-  -- #print addNatt.match_1
-  #print Nat.add
-  #check_translation @Nat.casesOn
-  #check_translation Nat.add.match_1
+  mod_def Natt.add extends Nat.add by
+    expose_names
+    intro _ ⟨h₁,_⟩
+    exact h₁ x_3.succ'
 
 example (n : Natt) : idNatt n = n := rfl
 
@@ -72,8 +60,5 @@ example : idNatt = (fun n : Natt => n) := rfl
 
 example : stepNatt = (fun n : Natt => Natt.succ n) := rfl
 
-example : addNatt Natt.zero Natt.zero = Natt.zero := rfl
-
-end inductiveExtension
-
-end modDefTests
+example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := by
+cbv

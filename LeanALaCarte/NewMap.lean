@@ -63,6 +63,8 @@ def withReplaceMVarsWithFVars [Inhabited α] (e: Expr) (k : Expr → Array Expr 
     let mvarTy ← mvar.getType'
     let args := e.getAppArgs
     forallBoundedTelescope mvarTy args.size fun xs ty => return ty.replaceFVars xs args
+  trace[Modular.Elab] "delayedMvarsWithArgs : {delayedMvarsWithArgs}"
+  trace[Modular.Elab] "mvarsWithAppTy : {mvarsWithAppTy}"
   let decls ← mvarsWithAppTy.mapM fun ty => do return (← mkFreshId,ty)
   withLocalDeclsDND decls fun xs =>
   let e := e.replace fun t =>
@@ -109,12 +111,10 @@ def elabModDef : ModularElab := fun stx => do
       pure aux_defs
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
     let extraMapEntries ← liftTermElabM do
-      let env ← getEnv
       let mut extraMapEntries := []
       for oldAuxName in extraMapNames do
         let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
-        if env.contains newAuxName then
-          throwError "uh"
+        checkNotAlreadyDeclared newAuxName
         let oldAuxInfo ← getConstInfoDefn oldAuxName
         let mappedAuxValue ← modmap map oldAuxInfo.value
         let mappedAuxValue ← lambdaTelescope mappedAuxValue fun xs e => do
@@ -133,6 +133,7 @@ def elabModDef : ModularElab := fun stx => do
           hints := oldAuxInfo.hints
           safety := oldAuxInfo.safety
         }
+        enableRealizationsForConst newAuxName
         if (← getEnv).contains newAuxName then
           extraMapEntries := (← mkAuxMapping oldAuxName newAuxName) :: extraMapEntries
       return extraMapEntries
@@ -163,6 +164,7 @@ def elabModDef : ModularElab := fun stx => do
         hints := defnVal.hints
         safety := defnVal.safety
       }
+      enableRealizationsForConst newFunName
     addDeclarationRangesFromSyntax newFunName newFun
 
     let newMapEntry : ModularExtension := {
