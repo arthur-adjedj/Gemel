@@ -2,6 +2,8 @@ import LeanALaCarte.NewMap
 import LeanALaCarte.ExtendInd
 import LeanALaCarte.CheckTranslation
 
+namespace ModDefTests
+
 def base (n : Nat) : Nat := Nat.succ n
 
 modular
@@ -60,5 +62,5 @@ example : idNatt = (fun n : Natt => n) := rfl
 
 example : stepNatt = (fun n : Natt => Natt.succ n) := rfl
 
-example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := by
-cbv
+example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := rfl
+#check Natt

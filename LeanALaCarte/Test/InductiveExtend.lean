@@ -54,13 +54,13 @@ namespace test2
 -- set_option trace.Modular.Elab true
 -- set_option trace.Modular.Subst true
 modular
-  inductive Natt extends Nat where
-    | succ' : Natt → Natt
+  inductive Natt' extends Nat where
+    | succ' : Natt' → Natt'
 
 modular
-  /-- info: Natt.succ' : Natt → Natt -/
-  #guard_msgs in
-  #check Natt.succ'
+  /-- info: Natt'.succ' : Natt' → Natt' -/
+#guard_msgs in
+  #check Natt'.succ'
 
 modular
   /-- info: Nat -/

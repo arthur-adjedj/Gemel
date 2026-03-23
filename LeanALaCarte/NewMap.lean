@@ -175,3 +175,4 @@ def elabModDef : ModularElab := fun stx => do
     }
     modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry) --.insertMany extraMapEntries
   | _ => throwUnsupportedSyntax
+#check Ident

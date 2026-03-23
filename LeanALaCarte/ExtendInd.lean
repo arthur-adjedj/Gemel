@@ -192,11 +192,10 @@ private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (
               }
 
 syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ "where" ctor* :  modular_command
-
 def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
   match stx with
   | `(modular_command|inductive $i $[$params]* extends $inds,* where $ctors*) => do
-    let newIndName := i.getId
+    let newIndName := i.getId --TODO this is wrong..? namespace handling is hard..
     Term.withAutoBoundImplicit <|
       Term.elabBinders params fun declaredParams => do
         let indExprs ← inds.getElems.mapM fun indStx => do
