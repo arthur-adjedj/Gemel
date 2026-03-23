@@ -140,28 +140,29 @@ def elabModDef : ModularElab := fun stx => do
     -- let mappedType ← modmap map unfoldedType
     -- let tyMVars := mappedType.collectMVars {}
     let map ← get
-    let mappedValue ← liftTermElabM <| modmap map defnVal.value
-    let mvars := mappedValue.collectMVars {} --tyMVars
-    -- TODO rather than recollect the right mvars, we might as well collect them through `modmap`
-    trace[Modular.Elab] "mvars collected: {mvars.result.map Expr.mvar}"
-    let tacticMvars ← liftTermElabM <| mvars.result.mapM getDelayedMVarRoot
-    trace[Modular.Elab] "mvar roots: {tacticMvars.map Expr.mvar}"
-    liftTermElabM <| solveGoalsWithTactic tac tacticMvars.toList
+    liftTermElabM do
+      let mappedValue ←  modmap map defnVal.value
+      let mvars := mappedValue.collectMVars {} --tyMVars
+      -- TODO rather than recollect the right mvars, we might as well collect them through `modmap`
+      trace[Modular.Elab] "mvars collected: {mvars.result.map Expr.mvar}"
+      let tacticMvars ←  mvars.result.mapM getDelayedMVarRoot
+      trace[Modular.Elab] "mvar roots: {tacticMvars.map Expr.mvar}"
+      solveGoalsWithTactic tac tacticMvars.toList
 
       -- let mappedType ← instantiateMVars mappedType
-    let mappedValue ← liftTermElabM <| instantiateMVars mappedValue
-    unless !(mappedValue.hasExprMVar) do
-      throwError "`mod_def` generated unresolved metavariables"
+      let mappedValue ← instantiateMVars mappedValue
+      unless !(mappedValue.hasExprMVar) do
+        throwError "`mod_def` generated unresolved metavariables"
 
-    checkNotAlreadyDeclared newFunName
-    liftTermElabM <| addDecl <| .defnDecl {
-      name := newFunName
-      levelParams := defnVal.levelParams
-      type := ← liftTermElabM <| inferType mappedValue
-      value := mappedValue
-      hints := defnVal.hints
-      safety := defnVal.safety
-    }
+      checkNotAlreadyDeclared newFunName
+      addDecl <| .defnDecl {
+        name := newFunName
+        levelParams := defnVal.levelParams
+        type := ← inferType mappedValue
+        value := mappedValue
+        hints := defnVal.hints
+        safety := defnVal.safety
+      }
     addDeclarationRangesFromSyntax newFunName newFun
 
     let newMapEntry : ModularExtension := {

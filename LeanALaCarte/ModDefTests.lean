@@ -37,8 +37,8 @@ def zeroNat : Nat := Nat.zero
 def stepNat (n : Nat) : Nat := Nat.succ n
 
 set_option pp.match false
+set_option pp.funBinderTypes true
 #print Nat.add
-
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
@@ -54,7 +54,7 @@ modular
   set_option trace.Modular.Elab true in
   set_option trace.Modular.Subst true in
   mod_def addNatt extends Nat.add by
-    sorry
+    intro a ⟨h₁,h₂⟩
 
   set_option pp.funBinderTypes true
   -- #print addNatt.match_1
