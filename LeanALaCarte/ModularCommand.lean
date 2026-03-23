@@ -149,7 +149,7 @@ def elabModularSetOption : ModularElab := fun stx => do
 
 syntax (name := modular_run_command) command : modular_command
 
-@[modular_elab modular_run_command]
+@[modular_elab modular_run_command, incremental]
 def elabModularElabCommand : ModularElab := fun stx => do
   if stx.isOfKind ``modular_run_command then
     StateT.lift <| elabCommand stx[0]

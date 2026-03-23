@@ -1,6 +1,7 @@
 import LeanALaCarte.Basic
 import LeanALaCarte.Elab
 import Lean.Parser.Command
+import Lean.Meta.Constructions
 open Lean Parser Elab Meta Command
 
 
@@ -40,6 +41,9 @@ def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM Ind
     let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
     let inheritedCtors ← inheritedCtors.mapM fun ctor => do
       let ctorType ← modmap tempMap ctor.type
+      unless !ctorType.hasMVar do
+        -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+        throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
       let ctorType := ctorType.replace fun
         | .fvar fvarId =>
           if fvarId == newIndFVar.fvarId! then some newIndConst else none
@@ -241,6 +245,28 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
                                      levelParams := newIndParams
                                      numArgs := 0
                                      numHoles := 0 }
+  let mkAuxMapping (oldName newName : Name) : ModularElabM (Name × ModularExtension) := do
+    let oldInfo ← getConstInfo oldName
+    let newInfo ← getConstInfo newName
+    let oldNumArgs := (getArrowBinderNames oldInfo.type).size
+    let newNumArgs := (getArrowBinderNames newInfo.type).size
+    unless oldNumArgs <= newNumArgs do
+      throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration has fewer arguments ({newNumArgs}) than the old one ({oldNumArgs})"
+    let numExtraArgs := newNumArgs - oldNumArgs
+    let oldArgBVar (i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
+    let holeBVar (i : Nat) : Expr := mkBVar (oldNumArgs + (numExtraArgs - 1 - i))
+    let mut auxArgs : Array Expr := #[]
+    for i in [:oldNumArgs] do
+      auxArgs := auxArgs.push (oldArgBVar i)
+    for i in [:numExtraArgs] do
+      auxArgs := auxArgs.push (holeBVar i)
+    let auxExt : ModularExtension := {
+      translation := mkAppN (mkConst newName (oldInfo.levelParams.map .param)) auxArgs
+      levelParams := oldInfo.levelParams
+      numArgs := oldNumArgs
+      numHoles := numExtraArgs
+    }
+    return (oldName.eraseMacroScopes, auxExt)
   for indName in extendedInductive.indNames do
     maps := (indName.eraseMacroScopes,indExt)::maps
     let indVal ← getConstInfoInduct indName
@@ -253,6 +279,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
       maps := (ctor.eraseMacroScopes,ctorExt)::maps
     let oldRecName := mkRecName indName
     if let .recInfo oldRecVal ← getConstInfo oldRecName then
+      let env ← getEnv
       let oldNumArgs := (getArrowBinderNames oldRecVal.type).size
       let oldPrefix := oldRecVal.numParams + oldRecVal.numMotives
       let tailStart := oldPrefix + oldRecVal.numMinors
@@ -273,17 +300,41 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
         numHoles := numExtraMinors
       }
       maps := (oldRecName.eraseMacroScopes, recExt) :: maps
+      let oldRecOnName := mkRecOnName indName
+      let newRecOnName := mkRecOnName newIndName
+      if env.contains oldRecOnName && env.contains newRecOnName then
+        maps := (← mkAuxMapping oldRecOnName newRecOnName) :: maps
+      let oldCasesOnName := mkCasesOnName indName
+      let newCasesOnName := mkCasesOnName newIndName
+      if env.contains oldCasesOnName && env.contains newCasesOnName then
+        maps := (← mkAuxMapping oldCasesOnName newCasesOnName) :: maps
+      let oldBelowName := mkBelowName indName
+      let newBelowName := mkBelowName newIndName
+      if env.contains oldBelowName && env.contains newBelowName then
+        maps := (← mkAuxMapping oldBelowName newBelowName) :: maps
+      let oldBRecOnName := mkBRecOnName indName
+      let newBRecOnName := mkBRecOnName newIndName
+      if env.contains oldBRecOnName && env.contains newBRecOnName then
+        maps := (← mkAuxMapping oldBRecOnName newBRecOnName) :: maps
   modify fun map => map.insertMany maps
 
-@[modular_elab modular_inductive]
+@[modular_elab modular_inductive, incremental]
 def elabExtendedInductive : ModularElab := fun stx => do
   let extendedInd ← liftTermElabM <| elabExtendedInd stx
-  addInductiveMappings extendedInd
   let map ← get
   trace[Modular.Elab] m!"modmap : {(← get).toList}"
   liftTermElabM do
     let extendedInductive ← extendedInd.toInductiveView map
     trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
     addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
-    -- TODO various mkAuxConstructions
-  -- TODO add relevant stuff to the modmap
+    mkRecOn extendedInd.newIndName
+    let env ← getEnv
+    let hasUnit := env.contains ``PUnit
+    let hasProd := env.contains ``Prod
+    if hasUnit then
+      mkCasesOn extendedInd.newIndName
+    if hasUnit && hasProd then
+      mkBelow extendedInd.newIndName
+      mkBRecOn extendedInd.newIndName
+  addInductiveMappings extendedInd
+  -- TODO? add mappings for `SizeOf` and related ?

@@ -56,6 +56,23 @@ def ModularElab := Syntax → ModularElabM Unit
 unsafe initialize modularElabAttribute : KeyedDeclsAttribute ModularElab ←
   mkElabAttribute ModularElab .anonymous `modular_elab Name.anonymous ``ModularElab "modular command"
 
+/--
+Disables incremental command reuse *and* reporting for `act` if `cond` is true by setting
+`Context.snap?` to `none`.
+-/
+def withoutModularCommandIncrementality (cond : Bool) (act : ModularElabM α) : ModularElabM α := do
+  let opts ← StateT.lift getOptions
+  -- Cancel old elaboration when discarding it (for commands without incrementality support)
+  if cond then
+    if let some old := (← read).snap?.bind (·.old?) then
+      StateT.lift <| old.val.cancelRec
+  withReader (fun ctx => { ctx with snap? := ctx.snap?.filter fun snap => Id.run do
+    if let some old := snap.old? then
+      if cond && opts.getBool `trace.Elab.reuse then
+        dbg_trace "reuse stopped: guard failed at {old.stx}"
+    return !cond
+  }) act
+
 private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                =>
     withInfoTreeContext
@@ -65,6 +82,9 @@ private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (Keye
   | (elabFn::elabFns) =>
     catchInternalId unsupportedSyntaxExceptionId
       (do
+        -- Prevent unsupported modular elaborators from accidentally accessing `Context.snap?`
+        -- (e.g. via nested incrementality-enabled command elaboration).
+        withoutModularCommandIncrementality (!(← isIncrementalElab elabFn.declName)) do
         withInfoTreeContext
           (mkInfoTree := fun trees =>
             pure <| InfoTree.node (Info.ofCommandInfo { elaborator := elabFn.declName, stx := stx }) trees)
@@ -88,7 +108,9 @@ where go := do
     match stx with
     | Syntax.node _ k args =>
       if k == nullKind then
-        args.forM elabModularCommand
+        -- Like regular command elaboration, disable incrementality for quoted command lists.
+        withoutModularCommandIncrementality true do
+          args.forM elabModularCommand
       else if k.toString == "choice" then
         elabChoiceAux args 0
       else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
@@ -112,11 +134,67 @@ where go := do
 def elabModularCommands (stxs : Array (TSyntax `modular_command)): ModularElabM Unit :=
   stxs.forM elabModularCommand
 
+open Language in
+/-- Snapshot for incremental processing of `modular` blocks. -/
+structure ModularBlockSnapshot extends Snapshot where
+  /-- Input modular commands. -/
+  cmds : Array Syntax
+  /-- Command state and modular map after each corresponding modular command. -/
+  outputs : Array (Command.State × ModularMap)
+deriving TypeName
 
-syntax "modular" manyIndent(modular_command) : command
-elab_rules : command
-| `(command| modular $[$m]* ) => do
-  let _ ← elabModularCommands m |>.run {}
+open Language in
+instance : ToSnapshotTree ModularBlockSnapshot where
+  toSnapshotTree s := SnapshotTree.mk s.toSnapshot #[]
+
+
+syntax (name := modular_block) "modular" manyIndent(modular_command) : command
+
+@[command_elab modular_block, incremental]
+def elabModularBlock : CommandElab := fun stx => do
+  match stx with
+  | `(command| modular $[$m]* ) => do
+    if let some snap := (← read).snap? then
+      let oldSnap? := do
+        let oldSnap ← snap.old?
+        oldSnap.val.get.toTyped? ModularBlockSnapshot
+      if snap.old?.isSome && oldSnap?.isNone then
+        snap.old?.forM (·.val.cancelRec)
+      let opts ← getOptions
+      let mut map : ModularMap := {}
+      let mut outputs : Array (Command.State × ModularMap) := #[]
+      let oldCmds? := oldSnap?.map (·.cmds)
+      let oldOutputs? := oldSnap?.map (·.outputs)
+      let mut reusedPrefix := true
+      for i in [:m.size] do
+        let cmd : Syntax := m[i]!
+        let oldCmd? := oldCmds?.bind (·[i]?)
+        let oldOutput? := oldOutputs?.bind (·[i]?)
+        if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
+          match oldOutput? with
+          | some (oldState, oldMap) =>
+            set oldState
+            map := oldMap
+            outputs := outputs.push (oldState, oldMap)
+          | none =>
+            reusedPrefix := false
+            let (_, newMap) ← elabModularCommand cmd |>.run map
+            map := newMap
+            outputs := outputs.push ((← get), map)
+        else
+          reusedPrefix := false
+          let (_, newMap) ← elabModularCommand cmd |>.run map
+          map := newMap
+          outputs := outputs.push ((← get), map)
+      snap.new.resolve <| .ofTyped {
+        diagnostics := .empty
+        cmds := m.map (·.raw)
+        outputs
+        : ModularBlockSnapshot
+      }
+    else
+      let _ ← elabModularCommands m |>.run {}
+  | _ => throwUnsupportedSyntax
 
 initialize
   registerTraceClass `Modular.Elab

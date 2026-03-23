@@ -4,7 +4,7 @@ open Lean Elab Command Term
 
 syntax (name := modular_check_translation) "#check_translation" ppLine term : modular_command
 
-@[modular_elab modular_check_translation]
+@[modular_elab modular_check_translation, incremental]
 def elabModularCheckTranslation : ModularElab := fun stx => do
   match stx with
   | `(modular_command| #check_translation $e:term) => do

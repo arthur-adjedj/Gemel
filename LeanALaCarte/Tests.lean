@@ -1,6 +1,7 @@
 import LeanALaCarte.Basic
 import LeanALaCarte.CheckTranslation
 import LeanALaCarte.ExtendInd
+-- import LeanALaCarte.NewMap
 import Lean.Meta.Check
 import Qq
 open Qq
@@ -41,7 +42,7 @@ set_option pp.funBinderTypes true
 #partial_map Nat.succ
 /--
 info: fun {motive : Natt → Sort _} (zero : motive Natt.zero) (succ : (n : Natt) → motive n → motive n.succ) (t : Natt) =>
-  Natt.rec zero succ (?m.3 zero succ t) t
+  Natt.rec zero succ ?m.2 t
 -/
 #guard_msgs in
 #partial_map @Nat.rec
@@ -63,8 +64,7 @@ modular
 
 modular
   /-- info: Nat -/
-  #guard_msgs (check info) in
-  set_option pp.universes true in
+  #guard_msgs in
   #check_translation Nat
 
 modular

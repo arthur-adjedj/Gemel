@@ -2,9 +2,10 @@ import LeanALaCarte.Elab
 import LeanALaCarte.ModularCommand
 open Lean Meta Elab Command Term
 
-partial def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
+partial def modmapAux (map : ModularMap) (e : Expr): MetaM Expr := do
   withIncRecDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"{exceptEmoji exn} modmap {e} ⇒ {exn.toOption}") do
+  -- withNewMCtxDepth do
+  withTraceNode `Modular.Subst (λ exn => return m!"{exceptEmoji exn} modmapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
   let fn := e.getAppFn
   let args := e.getAppArgs
   if let .const fnName lvls := fn then -- TODO manage universes better
@@ -14,26 +15,36 @@ partial def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
     if let some ext := ext? then
       --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
       unless ext.numArgs <= args.size do
-        return ← modmap map (← Meta.etaExpand e)
-      let newArgs ← args.mapM (modmap map)
+        return ← modmapAux map (← Meta.etaExpand e)
+      let newArgs ← modmapArgs args
       let res := ext.translation
         |>.instantiateLevelParams ext.levelParams lvls
         |>.instantiateRev newArgs[:ext.numArgs]
       trace[Modular.Subst] m!"args instantiated : {res}"
       trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
       -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
-      let mvars ← Array.mkM ext.numHoles (mkFreshExprMVar none .synthetic)
+      let mvars ← Array.mkM ext.numHoles (mkFreshExprMVar none .syntheticOpaque)
       trace[Modular.Subst] m!"mvars : {mvars}"
       let res := res.instantiateRev mvars
       trace[Modular.Subst] m!"mvars instantiated : {res}"
       let res := mkAppN res newArgs[ext.numArgs:]
       trace[Modular.Subst] m!"with extra args : {res}"
-      check res --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
+      check res  --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
+      let res ← instantiateMVars res
       return res
-    else return mkAppN fn (← args.mapM (modmap map))
-  else return mkAppN (← go fn) (← args.mapM (modmap map))
+    else
+      let newArgs ← modmapArgs args
+      return mkAppN fn newArgs
+  else
+    let newFn ← traverse fn
+    let newArgs ← modmapArgs args
+    return mkAppN newFn newArgs
 where
-  go e : MetaM Expr := match e with
+  modmapArgs args := args.foldlM (init := Array.emptyWithCapacity args.size) fun nargs e => do
+    let arg ← modmapAux map e
+    return nargs.push arg
+
+  traverse e: MetaM Expr := match e with
     | .sort _
     | .lit _ --What if you extend Nat/String ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
     | .bvar _ | .fvar _ | .mvar _ => pure e
@@ -46,25 +57,33 @@ where
         -/
         panic! "todo"
       else
-        return .proj tyName idx (← modmap map struct)
+        let newStruct ← modmapAux map struct
+        return .proj tyName idx newStruct
     | .letE ..
     | .lam .. =>
-      lambdaLetTelescope e fun xs e => withModMappedLctx xs do
-        mkLambdaFVars xs (← modmap map e)
+      lambdaLetTelescope e fun xs e => withmodmappedLctx xs do
+        let newe ← modmapAux map e
+        mkLambdaFVars xs newe
     | .forallE .. =>
-      forallTelescope e fun xs e => withModMappedLctx xs do
-        mkForallFVars xs (← modmap map e)
-    | .mdata _ e => modmap map e
+      forallTelescope    e fun xs e => withmodmappedLctx xs  do
+        let newe ← modmapAux map e
+        mkForallFVars xs newe
+    | .mdata _ e => modmapAux map e
     | _ => unreachable!
 
-  withModMappedLctx {α} (xs : Array Expr) (k : MetaM α) : MetaM α := do
+  withmodmappedLctx {α} (xs : Array Expr) (k : MetaM α) : MetaM α := do
     let localInsts ← Meta.getLocalInstances
     let mut lctx ← getLCtx
     for e in xs do
       let some lcdl := lctx.findFVar? e | unreachable!
-      let ty ← Meta.withLCtx lctx localInsts (modmap map lcdl.type)
+      let ty ← Meta.withLCtx lctx localInsts (modmapAux map lcdl.type)
       lctx := lctx.modifyLocalDecl e.fvarId! (·.setType ty)
       let some value := lcdl.value? | continue
-      let value ← Meta.withLCtx lctx localInsts (modmap map value)
+      let value← Meta.withLCtx lctx localInsts (modmapAux map value)
       lctx := lctx.modifyLocalDecl e.fvarId! (·.setValue value)
-    Meta.withLCtx lctx localInsts k
+    Meta.withLCtx lctx localInsts <| k
+
+def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
+  let e ← modmapAux map e
+  Meta.check e
+  return e
