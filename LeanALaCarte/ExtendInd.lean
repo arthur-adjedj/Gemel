@@ -91,31 +91,6 @@ private def replaceArrowBinderNames (type : Expr) (newNames : Array Name) : Expr
       type
   go type 0
 
-private def reorderCtorArgs (ctorType : Expr) : MetaM Expr := do
-  forallTelescopeReducing ctorType fun as type => do
-    let bs := type.getAppArgs
-    let mut as := as
-    let mut bsPrefix := #[]
-    for b in bs do
-      unless b.isFVar && as.contains b do
-        break
-      let localDecl ← getFVarLocalDecl b
-      if localDecl.binderInfo.isExplicit then
-        break
-      unless localDecl.userName.hasMacroScopes do
-        break
-      unless !(← localDeclDependsOnPred localDecl fun fvarId => as.any fun p => p.fvarId! == fvarId) do
-        break
-      bsPrefix := bsPrefix.push b
-      as := as.erase b
-    if bsPrefix.isEmpty then
-      return ctorType
-    else
-      let r ← mkForallFVars (bsPrefix ++ as) type
-      let C := type.getAppFn
-      let binderNames := getArrowBinderNames (← instantiateMVars (← inferType C))
-      return replaceArrowBinderNames r binderNames[*...bsPrefix.size]
-
 private partial def checkParamOccs (indFVars : Array Expr) (params : Array Expr) (ctorType : Expr) : MetaM Expr := do
   let rec visit (e : Expr) : MetaM Unit := do
     match e with
@@ -179,8 +154,7 @@ private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (
               let except (mvarId : MVarId) := ctorParams.any fun ctorParam => ctorParam.isMVar && ctorParam.mvarId! == mvarId
               let extraCtorParams ← Term.collectUnassignedMVars (← instantiateMVars type) #[] except
               let type ← mkForallFVars (extraCtorParams ++ ctorParams) type
-              let type ← reorderCtorArgs type
-              let type ← mkForallFVars indices type
+              -- let type ← mkForallFVars indices type
               let type ← mkForallFVars params type
               let type := type.replace fun
                 | .fvar fvarId =>
@@ -192,7 +166,7 @@ private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (
               }
 
 syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ "where" ctor* :  modular_command
-def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
+def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd := do
   match stx with
   | `(modular_command|inductive $i $[$params]* extends $inds,* where $ctors*) => do
     let newIndName := i.getId --TODO this is wrong..? namespace handling is hard..
@@ -209,8 +183,8 @@ def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
           | _ =>
             throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
         let indVals ← indNames.mapM getConstInfoInduct
-        let {levelParams, type, numParams := baseNumParams,  ..} := indVals[0]!
-        unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type) do
+        let {levelParams, type := type0, numParams := baseNumParams,  ..} := indVals[0]!
+        unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type0) do
           throwError "invalid types between inductives being extended"
         unless declaredParams.size <= baseNumParams do
           throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
@@ -222,6 +196,10 @@ def elabExtendedInd (stx : Syntax) : TermElabM ExtendedInd := do
             unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
               throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
         let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
+        let type ← modmap map type0
+        unless !type.hasMVar do
+        -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+          throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
         let (numParams, addedConstrs) ←
           if declaredParams.size == 0 && baseNumParams > 0 then
             try
@@ -319,7 +297,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
 
 @[modular_elab modular_inductive, incremental]
 def elabExtendedInductive : ModularElab := fun stx => do
-  let extendedInd ← liftTermElabM <| elabExtendedInd stx
+  let extendedInd ← liftTermElabM <| elabExtendedInd (← get) stx
   let map ← get
   trace[Modular.Elab] m!"modmap : {(← get).toList}"
   liftTermElabM do

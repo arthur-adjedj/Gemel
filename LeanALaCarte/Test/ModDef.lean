@@ -34,6 +34,15 @@ def zeroNat : Nat := Nat.zero
 
 def stepNat (n : Nat) : Nat := Nat.succ n
 
+inductive Vec (α : Type) : Nat → Type where
+  | nil : Vec α .zero
+  | cons : α → Vec α n → Vec α n.succ
+
+def Vec.append (v₁ : Vec α n) (v₂ : Vec α k) : Vec α (k.add n) :=
+  match v₁ with
+  | nil => v₂
+  | cons (n := n) a v₁ => cons a (v₁.append v₂)
+
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
@@ -49,8 +58,17 @@ modular
 
   mod_def Natt.add extends Nat.add by
     expose_names
-    intro _ ⟨h₁,_⟩
-    exact h₁ x_3.succ'
+    intro a ⟨h₁,_⟩
+    exact (h₁ x_3).succ'
+
+  inductive Vecc (α : Type) extends Vec α where
+    | cons'{n} : α → Vecc α n → Vecc α n.succ'
+
+  mod_def Vecc.append extends Vec.append by
+    intro n a v₁ h₁ _ b
+    subst_vars
+    obtain ⟨b₁,_⟩ := b
+    exact Vecc.cons' a b₁
 
 example (n : Natt) : idNatt n = n := rfl
 
@@ -63,4 +81,5 @@ example : idNatt = (fun n : Natt => n) := rfl
 example : stepNatt = (fun n : Natt => Natt.succ n) := rfl
 
 example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := rfl
-#check Natt
+
+example : Natt.add k n.succ' =  (Natt.add k n).succ' := by rfl
