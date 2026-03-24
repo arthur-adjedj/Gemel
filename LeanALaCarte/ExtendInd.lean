@@ -69,14 +69,6 @@ private def isInductiveFamily (numParams : Nat) (indFVar : Expr) : TermElabM Boo
   forallTelescopeReducing indFVarType fun xs _ =>
     return xs.size > numParams
 
-private def getArrowBinderNames (type : Expr) : Array Name :=
-  let rec go (type : Expr) (acc : Array Name) : Array Name :=
-    match type with
-    | .forallE n _ b _ => go b (acc.push n)
-    | .mdata _ b => go b acc
-    | _ => acc
-  go type #[]
-
 private def replaceArrowBinderNames (type : Expr) (newNames : Array Name) : Expr :=
   let rec go (type : Expr) (i : Nat) : Expr :=
     if h : i < newNames.size then
@@ -117,98 +109,90 @@ private partial def checkParamOccs (indFVars : Array Expr) (params : Array Expr)
   visit ctorType
   return ctorType
 
+def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (params : Array Expr) (newIndName : Name): TermElabM Expr := do
+  match type? with
+  | none => do
+    let indFamily ← isInductiveFamily params.size indFVar
+    if indFamily then
+      throwError "Missing resulting type for constructor `{ctorName}`: Its resulting type must be specified because it is part of an inductive family declaration"
+    return mkAppN indFVar params
+  | some ctorTypeStx =>
+    let type ← Term.elabType ctorTypeStx
+    Term.synthesizeSyntheticMVars (postpone := .yes)
+    let type ← instantiateMVars type
+    let type ← checkParamOccs #[indFVar] params type
+    forallTelescopeReducing type fun _ resultingType => do
+      unless resultingType.getAppFn == indFVar do
+        throwError m!"Unexpected resulting type{indentExpr resultingType}\nExpected an application of `{newIndName}`"
+      unless (← isType resultingType) do
+        throwError m!"Unexpected resulting term{indentExpr resultingType}\nThe constructor `{ctorName}` must return a type"
+    return type
+
 private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
-  (ctors : Array Syntax) : TermElabM (Array Constructor) := do
+  (ctors : Array Syntax) : TermElabM (Array Constructor) :=
   withLocalDeclD newIndName indType fun indFVar => do
     let newIndConst := mkConst newIndName (newLevelParams.map .param)
-    forallTelescopeReducing indType fun allArgs _ => do
-      let params := allArgs.extract 0 numParams
-      let indices := allArgs.extract numParams allArgs.size
-      withExplicitToImplicit params do
-        let indFamily ← isInductiveFamily params.size indFVar
-        ctors.mapM fun ctorStx => withRef ctorStx do
-          let (binders, type?) := expandOptDeclSig ctorStx[4]
-          let ctorName := ctorStx.getIdAt 3
-          Term.withAutoBoundImplicit <|
-            Term.elabBinders binders.getArgs fun ctorParams => withRef ctorStx do
-              let elabCtorType : TermElabM Expr := do
-                match type? with
-                | none =>
-                  if indFamily then
-                    throwError "Missing resulting type for constructor `{ctorName}`: Its resulting type must be specified because it is part of an inductive family declaration"
-                  return mkAppN indFVar params
-                | some ctorTypeStx =>
-                  let type ← Term.elabType ctorTypeStx
-                  Term.synthesizeSyntheticMVars (postpone := .yes)
-                  let type ← instantiateMVars type
-                  let type ← checkParamOccs #[indFVar] params type
-                  forallTelescopeReducing type fun _ resultingType => do
-                    unless resultingType.getAppFn == indFVar do
-                      throwError m!"Unexpected resulting type{indentExpr resultingType}\nExpected an application of `{newIndName}`"
-                    unless (← isType resultingType) do
-                      throwError m!"Unexpected resulting term{indentExpr resultingType}\nThe constructor `{ctorName}` must return a type"
-                  return type
-              let type ← elabCtorType
-              Term.synthesizeSyntheticMVarsNoPostponing
-              let ctorParams ← Term.addAutoBoundImplicits ctorParams (ctorStx[3].getTailPos? (canonicalOnly := true))
-              let except (mvarId : MVarId) := ctorParams.any fun ctorParam => ctorParam.isMVar && ctorParam.mvarId! == mvarId
-              let extraCtorParams ← Term.collectUnassignedMVars (← instantiateMVars type) #[] except
-              let type ← mkForallFVars (extraCtorParams ++ ctorParams) type
-              -- let type ← mkForallFVars indices type
-              let type ← mkForallFVars params type
-              let type := type.replace fun
-                | .fvar fvarId =>
-                  if fvarId == indFVar.fvarId! then some newIndConst else none
-                | _ => none
-              return {
-                name := newIndName ++ ctorName
-                type := type
-              }
+    forallBoundedTelescope indType numParams fun params _ => withExplicitToImplicit params do
+    ctors.mapM fun ctorStx => withRef ctorStx do
+      let (binders, type?) := expandOptDeclSig ctorStx[4]
+      let ctorName := ctorStx.getIdAt 3
+      Term.withAutoBoundImplicit <|
+        Term.elabBinders binders.getArgs fun ctorParams => do
+          let type ← elabCtorType type? indFVar ctorName params newIndName
+          Term.synthesizeSyntheticMVarsNoPostponing
+          let ctorParams ← Term.addAutoBoundImplicits ctorParams (ctorStx[3].getTailPos? (canonicalOnly := true))
+          let except (mvarId : MVarId) := ctorParams.any fun ctorParam => ctorParam.isMVar && ctorParam.mvarId! == mvarId
+          let extraCtorParams ← Term.collectUnassignedMVars (← instantiateMVars type) #[] except
+          let type ← mkForallFVars (extraCtorParams ++ ctorParams) type
+          let type ← mkForallFVars params type
+          let type := type.replaceFVar indFVar newIndConst
+          return {
+            name := newIndName ++ ctorName
+            type := type
+          }
 
 syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ "where" ctor* :  modular_command
 def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd := do
   match stx with
   | `(modular_command|inductive $i $[$params]* extends $inds,* where $ctors*) => do
+    Term.withAutoBoundImplicit do
+    Term.elabBinders params fun declaredParams => do
     let newIndName := i.getId --TODO this is wrong..? namespace handling is hard..
-    Term.withAutoBoundImplicit <|
-      Term.elabBinders params fun declaredParams => do
-        let indExprs ← inds.getElems.mapM fun indStx => do
-          let indExpr ← Term.elabTerm indStx none
-          instantiateMVars indExpr
-        let mut indNames : Array Name := #[]
-        for indExpr in indExprs do
-          match indExpr.getAppFn with
-          | .const indName _ =>
-            indNames := indNames.push indName.eraseMacroScopes
-          | _ =>
-            throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
-        let indVals ← indNames.mapM getConstInfoInduct
-        let {levelParams, type := type0, numParams := baseNumParams,  ..} := indVals[0]!
-        unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type0) do
-          throwError "invalid types between inductives being extended"
-        unless declaredParams.size <= baseNumParams do
-          throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
-        if declaredParams.size > 0 then
-          let firstArgs := indExprs[0]!.getAppArgs
-          unless firstArgs.size >= declaredParams.size do
-            throwError m!"Expected at least {declaredParams.size} parameter argument(s) in `extends` target"
-          for i in [:declaredParams.size] do
-            unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
-              throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
-        let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
-        let type ← modmap map type0
-        unless !type.hasMVar do
-        -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
-          throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
-        let (numParams, addedConstrs) ←
-          if declaredParams.size == 0 && baseNumParams > 0 then
-            try
-              pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
-            catch _ =>
-              pure (0, (← elabExtendedCtors newIndName levelParams type 0 ctors))
-          else
-            pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
-        return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
+    let indExprs ← inds.getElems.mapM fun indStx => do
+      let indExpr ← Term.elabTerm indStx none
+      instantiateMVars indExpr
+    let mut indNames : Array Name := #[]
+    for indExpr in indExprs do
+      let .const indName _ := indExpr.getAppFn
+        | throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
+      indNames := indNames.push indName.eraseMacroScopes
+    let indVals ← indNames.mapM getConstInfoInduct
+    let {levelParams, type := type0, numParams := baseNumParams,  ..} := indVals[0]!
+    unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type0) do
+      throwError "invalid types between inductives being extended"
+    unless declaredParams.size <= baseNumParams do
+      throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
+    if declaredParams.size > 0 then
+      let firstArgs := indExprs[0]!.getAppArgs
+      unless firstArgs.size >= declaredParams.size do
+        throwError m!"Expected at least {declaredParams.size} parameter argument(s) in `extends` target"
+      for i in [:declaredParams.size] do
+        unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
+          throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
+    let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
+    let type ← modmap map type0
+    unless !type.hasMVar do
+    -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+      throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
+    let (numParams, addedConstrs) ←
+      if declaredParams.size == 0 && baseNumParams > 0 then
+        try
+          pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
+        catch _ =>
+          pure (0, (← elabExtendedCtors newIndName levelParams type 0 ctors))
+      else
+        pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
+    return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
   | _ => throwUnsupportedSyntax
 
 def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit := do
@@ -225,8 +209,8 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
   let mkAuxMapping (oldName newName : Name) : ModularElabM (Name × ModularExtension) := do
     let oldInfo ← getConstInfo oldName
     let newInfo ← getConstInfo newName
-    let oldNumArgs := (getArrowBinderNames oldInfo.type).size
-    let newNumArgs := (getArrowBinderNames newInfo.type).size
+    let oldNumArgs := oldInfo.type.getNumHeadForalls
+    let newNumArgs := newInfo.type.getNumHeadForalls
     unless oldNumArgs <= newNumArgs do
       throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration has fewer arguments ({newNumArgs}) than the old one ({oldNumArgs})"
     let numExtraArgs := newNumArgs - oldNumArgs
@@ -257,7 +241,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
     let oldRecName := mkRecName indName
     if let .recInfo oldRecVal ← getConstInfo oldRecName then
       let env ← getEnv
-      let oldNumArgs := (getArrowBinderNames oldRecVal.type).size
+      let oldNumArgs := oldRecVal.type.getNumHeadForalls
       let oldPrefix := oldRecVal.numParams + oldRecVal.numMotives
       let tailStart := oldPrefix + oldRecVal.numMinors
       let numExtraMinors := numAddedCtors * oldRecVal.numMotives

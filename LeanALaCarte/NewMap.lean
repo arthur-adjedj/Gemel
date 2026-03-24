@@ -6,19 +6,11 @@ import LeanALaCarte.CollectDelayedAssignementsWithArgs
 
 open Lean Parser Elab Meta Command
 
-private def getArrowBinderNames (type : Expr) : Array Name :=
-  let rec go (type : Expr) (acc : Array Name) : Array Name :=
-    match type with
-    | .forallE n _ b _ => go b (acc.push n)
-    | .mdata _ b => go b acc
-    | _ => acc
-  go type #[]
-
 private def mkAuxMapping (oldName newName : Name) : TermElabM (Name × ModularExtension) := do
   let oldInfo ← getConstInfo oldName
   let newInfo ← getConstInfo newName
-  let oldNumArgs := (getArrowBinderNames oldInfo.type).size
-  let newNumArgs := (getArrowBinderNames newInfo.type).size
+  let oldNumArgs := oldInfo.type.getNumHeadForalls
+  let newNumArgs := newInfo.type.getNumHeadForalls
   unless oldNumArgs <= newNumArgs do
     throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration has fewer arguments ({newNumArgs}) than the old one ({oldNumArgs})"
   let numExtraArgs := newNumArgs - oldNumArgs
