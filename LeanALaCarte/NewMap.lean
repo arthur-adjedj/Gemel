@@ -3,34 +3,8 @@ import LeanALaCarte.Elab
 import Lean.Parser.Command
 import Lean.Parser.Tactic
 import LeanALaCarte.CollectDelayedAssignementsWithArgs
-
+import LeanALaCarte.AuxMapping
 open Lean Parser Elab Meta Command
-
-private def mkAuxMapping (oldName newName : Name) : TermElabM (Name × ModularExtension) := do
-  let oldInfo ← getConstInfo oldName
-  let newInfo ← getConstInfo newName
-  let oldNumArgs := oldInfo.type.getNumHeadForalls
-  let newNumArgs := newInfo.type.getNumHeadForalls
-  unless oldNumArgs <= newNumArgs do
-    throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration has fewer arguments ({newNumArgs}) than the old one ({oldNumArgs})"
-  let numExtraArgs := newNumArgs - oldNumArgs
-  let oldArgBVar (i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
-  let holeBVar (i : Nat) : Expr := mkBVar (oldNumArgs + (numExtraArgs - 1 - i))
-  let mut auxArgs : Array Expr := #[]
-  for i in [:oldNumArgs] do
-    auxArgs := auxArgs.push (oldArgBVar i)
-  for i in [:numExtraArgs] do
-    auxArgs := auxArgs.push (holeBVar i)
-  let translation := mkAppN (mkConst newName (oldInfo.levelParams.map .param)) auxArgs
-  let auxExt : ModularExtension := {
-    translation
-    levelParams := oldInfo.levelParams
-    numArgs := oldNumArgs
-    numHoles := numExtraArgs
-  }
-  return (oldName.eraseMacroScopes, auxExt)
-
-syntax "map_fn" ident+ "⇒" term : modular_command
 
 private partial def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
   unless goals.isEmpty do
@@ -77,23 +51,21 @@ def elabModDef : ModularElab := fun stx => do
       let info ← getConstInfo oldFunName
       pure info.levelParams
     let cinfo ← getConstInfo oldFunName
-    let defnVal ←
-      match cinfo with
-      | .defnInfo defnVal => pure defnVal
-      | _ => throwError "`mod_def` can only extend declarations defined with `def`"
+    unless cinfo.hasValue do
+      throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
 
     let extraMapNames ← do
       let constants :=
-        defnVal.type.foldConsts (init := ({} :  Std.HashSet Name)) fun constName cs =>
+        cinfo.type.foldConsts (init := ({} :  Std.HashSet Name)) fun constName cs =>
           cs.insert constName.eraseMacroScopes
-      let constants := defnVal.value.foldConsts (init := constants) fun constName cs =>
+      let constants := cinfo.value!.foldConsts (init := constants) fun constName cs =>
           cs.insert constName.eraseMacroScopes
 
       let mut aux_defs := []
 
       for constName in constants do
         if map[constName]?.isNone then
-          if constName.isInternalDetail then
+          if oldFunName.isPrefixOf constName then
             aux_defs := constName::aux_defs
           -- let cinfo ← getConstInfo constName
           -- let constType := cinfo.type
@@ -107,8 +79,10 @@ def elabModDef : ModularElab := fun stx => do
       for oldAuxName in extraMapNames do
         let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
         checkNotAlreadyDeclared newAuxName
-        let oldAuxInfo ← getConstInfoDefn oldAuxName
-        let mappedAuxValue ← modmap map oldAuxInfo.value
+        let oldAuxInfo ← getConstInfo oldAuxName
+        unless oldAuxInfo.hasValue do
+          throwError "Failed to translate auxiliary declaration {oldAuxName}, expected `def` or `theorem`"
+        let mappedAuxValue ← modmap map oldAuxInfo.value!
         let mappedAuxValue ← lambdaTelescope mappedAuxValue fun xs e => do
           unless xs.all (! ·.hasMVar) do
             throwError "TODO instantiate vars appropriately to avoid this issue"
@@ -123,7 +97,7 @@ def elabModDef : ModularElab := fun stx => do
           type := mappedAuxType
           value := mappedAuxValue
           hints := oldAuxInfo.hints
-          safety := oldAuxInfo.safety
+          safety := if oldAuxInfo.isUnsafe then .unsafe else .safe
         }
         enableRealizationsForConst newAuxName
         if (← getEnv).contains newAuxName then
@@ -134,12 +108,9 @@ def elabModDef : ModularElab := fun stx => do
     -- let tyMVars := mappedType.collectMVars {}
     let map ← get
     liftTermElabM do
-      let mappedValue ←  modmap map defnVal.value
-      let mvars := mappedValue.collectMVars {} --tyMVars
-      -- TODO rather than recollect the right mvars, we might as well collect them through `modmap`
-      trace[Modular.Elab] "mvars collected: {mvars.result.map Expr.mvar}"
-      let tacticMvars ←  mvars.result.mapM getDelayedMVarRoot
-      trace[Modular.Elab] "mvar roots: {tacticMvars.map Expr.mvar}"
+      let mappedValue ←  modmap map cinfo.value!
+      let tacticMvars ← getMVarsNoDelayed mappedValue
+      trace[Modular.Elab] "mvars collected: {tacticMvars.map Expr.mvar}"
       solveGoalsWithTactic tac tacticMvars.toList
 
       -- let mappedType ← instantiateMVars mappedType
@@ -150,11 +121,11 @@ def elabModDef : ModularElab := fun stx => do
       checkNotAlreadyDeclared newFunName
       addDecl <| .defnDecl {
         name := newFunName
-        levelParams := defnVal.levelParams
+        levelParams := cinfo.levelParams
         type := ← inferType mappedValue
         value := mappedValue
-        hints := defnVal.hints
-        safety := defnVal.safety
+        hints := cinfo.hints
+        safety := if cinfo.isUnsafe then .unsafe else .safe
       }
       enableRealizationsForConst newFunName
     addDeclarationRangesFromSyntax newFunName newFun
@@ -167,4 +138,3 @@ def elabModDef : ModularElab := fun stx => do
     }
     modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry) --.insertMany extraMapEntries
   | _ => throwUnsupportedSyntax
-#check Ident
