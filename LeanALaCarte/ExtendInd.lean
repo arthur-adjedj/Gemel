@@ -198,17 +198,17 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
 def mkSizeOfName (name : Name) : Name :=
   name ++ `_sizeOf_inst
 
-def mkAuxMappingIfValid (oldName newName : Name) : ModularElabM Unit := do
+def mkAuxMappingIfValid (oldName newName : Name) : ModularM Unit := do
   let env ← getEnv
   if env.contains oldName && env.contains newName then
-    let (name, ext) ← liftTermElabM <| mkAuxMapping oldName newName
+    let (name, ext) ← mkAuxMapping oldName newName
     modify (·.insert name ext)
 
-def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : ModularElabM Unit :=
+def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : ModularM Unit :=
   mkAuxName.forM fun mkAuxName =>
     mkAuxMappingIfValid (mkAuxName oldName) (mkAuxName newName)
 
-def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit := do
+def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
   let newIndName := extendedInductive.newIndName
   let newIndParams := extendedInductive.levelParams
   let newIndLevels := newIndParams.map .param
@@ -255,24 +255,23 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularElabM Unit :
     mkAuxMappings mkAuxNames indName newIndName
 
 @[modular_elab modular_inductive, incremental]
-def elabExtendedInductive : ModularElab := fun stx => do
-  let extendedInd ← liftTermElabM <| elabExtendedInd (← get) stx
+def elabExtendedInductive : ModularElab := fun stx => liftModularM do
+  let extendedInd ← elabExtendedInd (← get) stx
   let newIndName := extendedInd.newIndName
   let map ← get
   trace[Modular.Elab] m!"modmap : {(← get).toList}"
-  liftTermElabM do
-    let extendedInductive ← extendedInd.toInductiveView map
-    trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
-    addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
-    mkRecOn newIndName
-    mkCasesOn newIndName
-    mkCtorIdx newIndName
-    mkCtorElim newIndName
-    mkNoConfusion newIndName
-    mkBelow newIndName
-    mkBRecOn newIndName
-    mkSizeOfInstances newIndName
-    IndPredBelow.mkBelow newIndName
-    mkInjectiveTheorems newIndName
+  let extendedInductive ← extendedInd.toInductiveView map
+  trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
+  addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
+  mkRecOn newIndName
+  mkCasesOn newIndName
+  mkCtorIdx newIndName
+  mkCtorElim newIndName
+  mkNoConfusion newIndName
+  mkBelow newIndName
+  mkBRecOn newIndName
+  mkSizeOfInstances newIndName
+  IndPredBelow.mkBelow newIndName
+  mkInjectiveTheorems newIndName
   addInductiveMappings extendedInd
   -- TODO? add mappings for `SizeOf` and related ?

@@ -7,8 +7,7 @@ namespace ModDefTests
 def base (n : Nat) : Nat := Nat.succ n
 
 modular
-  mod_def base' extends base by
-    skip
+  mod_def base' extends base
 
 example (n : Nat) : base' n = Nat.succ n := rfl
 
@@ -17,14 +16,12 @@ theorem t : True := trivial
 modular
 
   #guard_msgs in
-  mod_def bad extends t by
-    skip
+  mod_def bad extends t
 
 def baseWrap (n : Nat) : Nat := base n
 
 modular
-  mod_def baseWrap' extends baseWrap by
-    skip
+  mod_def baseWrap' extends baseWrap
 
 example (n : Nat) : baseWrap' n = Nat.succ n := rfl
 
@@ -48,20 +45,31 @@ modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
-  mod_def Natt.add extends Nat.add by
+  mod_def Natt.add extends Nat.add
+  by
     expose_names
     intro a h
     exact (h.1 x_3).succ'
 
-modular
 
+modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
-  mod_def Vecc.append extends Vec.append by
-    intro n a _ _ _ b
+  mod_def Vecc.append extends Vec.append
+  by
+    intro n a v _ _ b
     subst_vars
-    exact Vecc.cons' a b.1
+    apply Vecc.cons' a
+    apply b ⟨n,v⟩
+    decreasing_tactic
+
+
+/--
+info: ModDefTests.Vecc.append {α : Type} {n k : Nat} (v₁ : Vecc α n) (v₂ : Vecc α k) : Vecc α (k.add ⟨n, v₁⟩.1)
+-/
+#guard_msgs in
+#check Vecc.append
 
 example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := rfl
 

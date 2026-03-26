@@ -1,7 +1,7 @@
 import LeanALaCarte.Elab
 open Lean Parser Elab Meta Command
 
-def mkAuxMapping (oldName newName : Name) : TermElabM (Name × ModularExtension) := do
+def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) := do
   let oldInfo ← getConstInfo oldName
   let newInfo ← getConstInfo newName
   let oldNumArgs := oldInfo.type.getNumHeadForalls
@@ -23,3 +23,7 @@ def mkAuxMapping (oldName newName : Name) : TermElabM (Name × ModularExtension)
     numHoles := numExtraArgs
   }
   return (oldName.eraseMacroScopes, auxExt)
+
+def addAuxMapping (oldName newName : Name) : ModularM Unit := do
+  let (name,mapping) ← mkAuxMapping oldName newName
+  modify fun m => m.insert name mapping

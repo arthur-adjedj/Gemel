@@ -23,8 +23,10 @@ instance : ToString ModularExtension where
 
 abbrev ModularMap := Std.HashMap Name ModularExtension
 
-abbrev ModularM := StateT ModularMap MetaM
+abbrev ModularM := StateT ModularMap TermElabM
 abbrev ModularElabM := StateT ModularMap CommandElabM
+
+def liftModularM (k : ModularM α) : ModularElabM α := fun map => liftTermElabM (k map)
 
 instance [MonadLiftT m n] : MonadLiftT (StateT ρ m) (StateT ρ n) where
   monadLift m ρ := m ρ
