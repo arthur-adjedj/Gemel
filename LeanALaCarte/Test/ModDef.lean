@@ -45,25 +45,21 @@ modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
-  mod_def Natt.add extends Nat.add
-  by
+  mod_def Natt.add extends Nat.add by
     expose_names
     intro a h
     exact (h.1 x_3).succ'
-
 
 modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
-  mod_def Vecc.append extends Vec.append
-  by
+  mod_def Vecc.append extends Vec.append by
     intro n a v _ _ b
     subst_vars
     apply Vecc.cons' a
     apply b ⟨n,v⟩
     decreasing_tactic
-
 
 /--
 info: ModDefTests.Vecc.append {α : Type} {n k : Nat} (v₁ : Vecc α n) (v₂ : Vecc α k) : Vecc α (k.add ⟨n, v₁⟩.1)
@@ -73,4 +69,4 @@ info: ModDefTests.Vecc.append {α : Type} {n k : Nat} (v₁ : Vecc α n) (v₂ :
 
 example : Natt.add (Natt.succ' .zero) (Natt.succ' .zero) = Natt.zero.succ'.succ' := rfl
 
-example : Natt.add k n.succ' =  (Natt.add k n).succ' := by rfl
+example : Natt.add k n.succ' = (Natt.add k n).succ' := by rfl

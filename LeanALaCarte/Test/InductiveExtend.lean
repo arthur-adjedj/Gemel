@@ -1,7 +1,7 @@
 import LeanALaCarte.Basic
 import LeanALaCarte.CheckTranslation
 import LeanALaCarte.ExtendInd
--- import LeanALaCarte.NewMap
+import LeanALaCarte.NewMap
 import Lean.Meta.Check
 import Qq
 open Qq
@@ -131,11 +131,34 @@ abbrev Env := List Ty
 
 set_option inductive.autoPromoteIndices false in --Fails otherwise, should it not ?
 inductive Var : (Γ : Env) → Ty → Type
-  | var {Γ t} (n : Nat) (h : Γ[n]? = some t) : Var Γ t
+  | var {Γ A} (h : A ∈ Γ) : Var Γ A
+
+def Ren (Γ Δ : Env) := ∀ A, A ∈ Γ → A ∈ Δ
+
+def Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
+  | _,.head _ => .head _
+  | _,.tail _ h => .tail _ (R _ h)
+
+def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
+  | var h => .var (R _ h)
+termination_by structural x => x -- :-(
 
 modular
   inductive Term extends Var where
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
+  mod_def Term.wk extends Var.wk by
+  · intro _ _ _ a _ _ _
+    subst_vars
+    apply Term.lam
+    -- Doesn't work: the base function `Var.mk` is not recursive, so `.below` is not produced/available here...
+    --exact Term.wk (R.ext _) a
+    sorry
+  · intro _ _ _ a b _ _ _
+    subst_vars
+    apply Term.app <;> sorry
+    -- same issue here..
+    -- · exact Term.wk R a
+    -- · exact Term.wk R b
 end test5
