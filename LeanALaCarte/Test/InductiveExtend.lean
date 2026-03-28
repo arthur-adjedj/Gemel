@@ -162,3 +162,7 @@ modular
     -- · exact Term.wk R a
     -- · exact Term.wk R b
 end test5
+
+
+/- TODO for next time you read this file and have an internet connection:
+   The hard question wrt extending inductive types horizontally is, of course, to infer where possibly add new bindings in the translated functions for the parameters/indices introduced. IIRC Andras Kovacs produced a paper that inferring where to place new implicit parameters in DTTs. Despite the problem being an undecidable scheduling system, he does provide some interesting heuristics I think. It might be the right way to look at things.-/

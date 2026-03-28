@@ -59,8 +59,23 @@ def mkMappedDecl (oldName newName : Name) (isAux : Bool := true): MetaM MappedDe
            newName
            isAux}
 
+
+/- TODO adapt syntax to take into account:
+- docstrings
+- attributes
+- termination hints
+- `where` clauses
+- (maybe ?) make the current `by` goals be filled in as holes in `where finally` ? (this would be non-trivial in cases where the holes appear in auxiliary defs rather than the "real" one. One solution could be to inline/delta-reduce auxiliary defs that aren't matchers, and translating the core def directly, leaving the job of re-abstracting relevant parts of the code to the usual elaborator for `PreDef`s. The big danger to doing that is obviously performance. `modmap`ed terms need to be `check`ed to instantiate the type of the introduced mvars for now, and doing so on terms containing very large proof terms (e.g `grind` or `omega` proofs) is bound to be expensive. A solution would be to get rid of `Meta.check` in `modmap`, but I'm confident type-checking is still called a fair few times when elaborating PreDefs, so this doesn't solve the issue of abstracting the proofs at the right time.)
+
+Once that is all done, translate that syntax to a `DefView` and elaborate it like any other function, making use of all the niceties the lean elaborator offers :D
+Actually, `DefView` contain the value as a syntax, not as an Expr, this is not ideal because it implies needing to first delaborate the translated term before re-elaborating it.. Let's try to translate things directly to `PreDef`s instead, this will be a bit of a PITA...
+-/
 syntax (name := modular_mod_def)
   "mod_def" ident "extends" ident (colGe "by" ppLine tacticSeq)* : modular_command
+
+syntax (name := modular_better_mod_def)
+  declModifiers "new_mod_def" ident "extends" ident Termination.suffix (Term.whereDecls)? : modular_command
+
 @[modular_elab modular_mod_def, incremental]
 def elabModDef : ModularElab := fun stx => liftModularM do
   match stx with
