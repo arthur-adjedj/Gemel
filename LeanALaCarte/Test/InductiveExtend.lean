@@ -1,7 +1,7 @@
 import LeanALaCarte.Basic
 import LeanALaCarte.CheckTranslation
 import LeanALaCarte.ExtendInd
-import LeanALaCarte.NewMap
+import LeanALaCarte.ModDef
 import Lean.Meta.Check
 import Qq
 open Qq
@@ -148,19 +148,14 @@ modular
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
-  mod_def Term.wk extends Var.wk by
-  · intro _ _ _ a _ _ _
-    subst_vars
-    apply Term.lam
+  mod_def Term.wk extends Var.wk where
+    · intro _ _ _ a _ _ _
+      subst_vars
+      refine Term.wk (Term.lam ?_)
     -- Doesn't work: the base function `Var.mk` is not recursive, so `.below` is not produced/available here...
     --exact Term.wk (R.ext _) a
-    sorry
-  · intro _ _ _ a b _ _ _
-    subst_vars
-    apply Term.app <;> sorry
-    -- same issue here..
-    -- · exact Term.wk R a
-    -- · exact Term.wk R b
+      sorry
+
 end test5
 
 

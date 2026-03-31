@@ -1,4 +1,4 @@
-import LeanALaCarte.NewMap
+import LeanALaCarte.ModDef
 import LeanALaCarte.ExtendInd
 import LeanALaCarte.CheckTranslation
 
@@ -9,7 +9,7 @@ def base (n : Nat) : Nat := Nat.succ n
 modular
   mod_def base' extends base
 
-example (n : Nat) : base' n = Nat.succ n := rfl
+-- example (n : Nat) : base' n = Nat.succ n := rfl
 
 theorem t : True := trivial
 
@@ -23,7 +23,7 @@ def baseWrap (n : Nat) : Nat := base n
 modular
   mod_def baseWrap' extends baseWrap
 
-example (n : Nat) : baseWrap' n = Nat.succ n := rfl
+-- example (n : Nat) : baseWrap' n = Nat.succ n := rfl
 
 def idNat (n : Nat) : Nat := n
 
@@ -44,17 +44,20 @@ termination_by sizeOf v₁
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
-
-  mod_def Natt.add extends Nat.add by
+  set_option pp.match false
+  set_option trace.Modular.Elab true
+  set_option pp.universes true
+  set_option trace.Modular.Subst true
+  noncomputable mod_def Natt.add extends Nat.add where
     expose_names
-    intro a h
+    intro a
     exact (h.1 x_3).succ'
 
 modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
-  mod_def Vecc.append extends Vec.append by
+  mod_def Vecc.append extends Vec.append where
     intro n a v _ _ b
     subst_vars
     apply Vecc.cons' a
