@@ -5,7 +5,7 @@ open Lean Meta Elab Command Term
 partial def modmapAux (map : ModularMap) (e : Expr): MetaM Expr := do
   withIncRecDepth do
   -- withNewMCtxDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"{exceptEmoji exn} modmapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
+  withTraceNode `Modular.Subst (λ exn => return m!"modmapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
   let fn := e.getAppFn
   let args := e.getAppArgs
   if let .const fnName lvls := fn then -- TODO manage universes better
