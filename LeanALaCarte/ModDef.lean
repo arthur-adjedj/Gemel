@@ -161,9 +161,12 @@ def elabModDef : ModularElab := fun stx =>
       else
         let newMvars ← getMVarsNoDelayed mappedValue
         mvars := newMvars.toList ++ mvars
-        mappedValues := mappedValues.push mappedValue
-
-    unless mvars.isEmpty do
+      mappedValues := mappedValues.push mappedValue
+    trace[Modular.Elab] "Mapped values : {mappedValues}"
+    if mvars.isEmpty  then
+      if tacs.isSome then
+        throwError "Unexpected tactic block: the translation generated no obligations"
+    else
       let some tac := tacs
         | throwError "Missing `where` block to solve the missing holes"
       solveGoalsWithTactic tac mvars
