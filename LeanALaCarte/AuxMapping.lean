@@ -52,4 +52,5 @@ def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) 
 
 def addAuxMapping (oldName newName : Name) : ModularM Unit := do
   let (name,mapping) ← mkAuxMapping oldName newName
+  trace[Modular.Elab] m!"Adding mapping {oldName} ⇒ {mapping}"
   modify fun m => m.insert name mapping

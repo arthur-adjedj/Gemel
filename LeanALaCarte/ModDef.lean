@@ -127,26 +127,13 @@ def elabModDef : ModularElab := fun stx =>
 
     let oldEnv ← getEnv
 
-    for {cinfo, newName, type, ..} in mapHeaders do
-      addDecl <| .axiomDecl {  name := newName
-                               levelParams := cinfo.levelParams
-                               type := type
-                               isUnsafe := false }
+    -- for {cinfo, newName, type, ..} in mapHeaders do
+
     let mut mvars := []
     let mut mappedValues := #[]
+    let mut mappedTypes := #[]
+
     for {cinfo, newName, isAux, ..} in mapHeaders do
-      if isAux then
-        addAuxMapping cinfo.name newName
-      else
-        -- TODO put behind a function
-        let levelParams := cinfo.levelParams
-        let newMapEntry := {
-          translation := mkConst newName (levelParams.map .param)
-          levelParams := levelParams
-          numArgs := 0
-          numHoles := 0}
-        modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
-    for {cinfo, newName, ..} in mapHeaders do
       trace[Modular.Elab] "elaborating {newName}"
       let map ← get
       let mut mappedValue ← modmap map cinfo.value!
@@ -162,6 +149,26 @@ def elabModDef : ModularElab := fun stx =>
         let newMvars ← getMVarsNoDelayed mappedValue
         mvars := newMvars.toList ++ mvars
       mappedValues := mappedValues.push mappedValue
+      let mappedType ← inferType mappedValue
+      if mappedType.hasMVar then
+        throwError "Type contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
+      mappedTypes := mappedTypes.push mappedType
+      addDecl <| .axiomDecl {  name := newName
+                               levelParams := cinfo.levelParams
+                               type := mappedType
+                               isUnsafe := false }
+      if isAux then
+        addAuxMapping cinfo.name newName
+      else
+        -- TODO put behind a function
+        let levelParams := cinfo.levelParams
+        let newMapEntry := {
+          translation := mkConst newName (levelParams.map .param)
+          levelParams := levelParams
+          numArgs := 0
+          numHoles := 0}
+        modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
+
     trace[Modular.Elab] "Mapped values : {mappedValues}"
     if mvars.isEmpty  then
       if tacs.isSome then
@@ -170,11 +177,30 @@ def elabModDef : ModularElab := fun stx =>
       let some tac := tacs
         | throwError "Missing `where` block to solve the missing holes"
       solveGoalsWithTactic tac mvars
+    trace[Modular.Elab] "Tactics elaborated"
     mappedValues ← mappedValues.mapM instantiateMVars
     mappedValues.forM fun e => Meta.check e
     if mappedValues.any Expr.hasExprMVar then
       throwError "`mod_def` generated unresolved metavariables"
     addDeclarationRangesFromSyntax newFunName newFun
+    trace[Modular.Elab] "Setting old env back"
+    setEnv oldEnv
+    let mut predefs : Array PreDefinition:= #[]
+    for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
+      let predef := { ref := stx
+                      kind := cinfo.kind!
+                      levelParams := cinfo.levelParams
+                      modifiers := modifiers
+                      declName := newName
+                      binders := .missing
+                      type := mappedType
+                      value := mappedValue
+                      termination := if isAux then .none else termination_hint }
+      predefs := predefs.push predef
+    trace[Modular.Elab] "Predefs constructed successfully"
+    addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
+    trace[Modular.Elab] "Predefs elaborated successfully"
+
       /-After that we need to:
         - generate the appropriate predefs from those
         - set the original env back
@@ -212,33 +238,33 @@ def elabModDef : ModularElab := fun stx =>
 
 
 /- This is super great news, it means we can elaborate many preDefs together, even if they don't have the same levelParams, as long as they're not part of the same SCC, which is exactly what I need !!-/
-run_cmd liftTermElabM do
-  let preDef1 : PreDefinition := { ref := .missing
-                                   kind := .def
-                                   levelParams := [`u]
-                                   modifiers := default
-                                   declName := `test
-                                   binders := .missing
-                                   type := mkSort (.param `u)
-                                   value := mkConst `PUnit [.param `u]
-                                   termination := { ref := .missing
-                                                    terminationBy?? := none
-                                                    terminationBy? := none
-                                                    partialFixpoint? := none
-                                                    decreasingBy? := none
-                                                    extraParams := 0 } }
-  let preDef2 : PreDefinition := { ref := .missing
-                                   kind := .def
-                                   levelParams := []
-                                   modifiers := default
-                                   declName := `test2
-                                   binders := .missing
-                                   type := mkSort 0
-                                   value := mkConst `test [0]
-                                   termination := { ref := .missing
-                                                    terminationBy?? := none
-                                                    terminationBy? := none
-                                                    partialFixpoint? := none
-                                                    decreasingBy? := none
-                                                    extraParams := 0 } }
-  addPreDefinitions (← getLCtx, ← getLocalInstances) #[preDef1,preDef2]
+-- run_cmd liftTermElabM do
+--   let preDef1 : PreDefinition := { ref := .missing
+--                                    kind := .def
+--                                    levelParams := [`u]
+--                                    modifiers := default
+--                                    declName := `test
+--                                    binders := .missing
+--                                    type := mkSort (.param `u)
+--                                    value := mkConst `PUnit [.param `u]
+--                                    termination := { ref := .missing
+--                                                     terminationBy?? := none
+--                                                     terminationBy? := none
+--                                                     partialFixpoint? := none
+--                                                     decreasingBy? := none
+--                                                     extraParams := 0 } }
+--   let preDef2 : PreDefinition := { ref := .missing
+--                                    kind := .def
+--                                    levelParams := []
+--                                    modifiers := default
+--                                    declName := `test2
+--                                    binders := .missing
+--                                    type := mkSort 0
+--                                    value := mkConst `test [0]
+--                                    termination := { ref := .missing
+--                                                     terminationBy?? := none
+--                                                     terminationBy? := none
+--                                                     partialFixpoint? := none
+--                                                     decreasingBy? := none
+--                                                     extraParams := 0 } }
+--   addPreDefinitions (← getLCtx, ← getLocalInstances) #[preDef1,preDef2]

@@ -44,14 +44,18 @@ termination_by sizeOf v₁
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
+
   set_option pp.match false
   set_option trace.Modular.Elab true
   set_option pp.universes true
   set_option trace.Modular.Subst true
-  noncomputable mod_def Natt.add extends Nat.add where
+  set_option trace.Elab true
+  mod_def Natt.add extends Nat.add where
     expose_names
-    intro a
-    exact (h.1 x_3).succ'
+    -- sorry
+    intro a ⟨h,_⟩
+    sorry
+    -- exact (h x_3).succ'
 
 modular
   inductive Vecc (α : Type) extends Vec α where

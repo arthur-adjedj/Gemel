@@ -18,6 +18,9 @@ structure ModularExtension where
   numHoles : Nat
 deriving Inhabited
 
+instance : ToMessageData ModularExtension where
+  toMessageData m := m!"⦃ levelParams : {m.levelParams}\nnumArgs : {m.numArgs}\nnumHoles : {m.numHoles}\ntranslation: {indentExpr m.translation}⦄"
+
 instance : ToString ModularExtension where
   toString map := toString map.translation
 
