@@ -141,20 +141,26 @@ def Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
 
 def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
   | var h => .var (R _ h)
-termination_by structural x => x -- :-(
 
+set_option trace.profiler true
+set_option trace.Elab.definition.body true
 modular
   inductive Term extends Var where
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
-  mod_def Term.wk extends Var.wk where
+  mod_def Term.wk extends Var.wk
+  -- termination_by structural R t => t
+  where
     · intro _ _ _ a _ _ _
       subst_vars
-      refine Term.wk (Term.lam ?_)
-    -- Doesn't work: the base function `Var.mk` is not recursive, so `.below` is not produced/available here...
-    --exact Term.wk (R.ext _) a
-      sorry
+      apply Term.lam
+      exact Term.wk (R.ext _) a
+    · intro _ _ _ a b _ _ _
+      subst_vars
+      apply Term.app
+      · exact Term.wk R a
+      · exact Term.wk R b
 
 end test5
 

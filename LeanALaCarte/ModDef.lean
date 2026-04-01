@@ -60,8 +60,84 @@ def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
-structure MappedDecl extends MappedHeader where
-  value : Expr
+
+private def collectExprConstants (exprs : Array Expr) : NameSet :=
+  exprs.foldl (init := {}) fun names e => e.foldConsts names fun c cs => cs.insert c
+
+--AI Slop that works, TODO review
+private def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : NameSet)
+    (roots : NameSet) : TermElabM (Std.HashMap Name ConstantInfo) := do
+  profileitM Exception s!"collectRetainedDecls" (← getOptions) do
+    let envAfter ← getEnv
+    let mut retained : Std.HashMap Name ConstantInfo := {}
+    let mut seen : NameSet := {}
+    let mut worklist : List Name := roots.toList
+    while !worklist.isEmpty do
+      let name := worklist.head!
+      worklist := worklist.tail!
+      if seen.contains name then
+        continue
+      seen := seen.insert name
+      if envBefore.contains name || tempAxiomNames.contains name then
+        continue
+      let some cinfo := envAfter.find? name
+        | continue
+      retained := retained.insert name cinfo
+      for depName in cinfo.getUsedConstantsAsSet do
+        if !tempAxiomNames.contains depName && !seen.contains depName then
+          worklist := depName :: worklist
+    return retained
+
+private structure TopoRetainedState where
+  visiting : NameSet := {}
+  visited : NameSet := {}
+  ordered : Array ConstantInfo := #[]
+
+--AI Slop that works, TODO review
+private partial def topoSortRetainedDeclsVisit
+    (declMap : Std.HashMap Name ConstantInfo)
+    (name : Name) : StateRefT TopoRetainedState TermElabM Unit := do
+  let s ← get
+  if s.visited.contains name then
+    return
+  if s.visiting.contains name then
+    throwError "cycle detected while ordering generated auxiliary declarations at `{name}`"
+  let some cinfo := declMap.get? name
+    | return
+  modify fun s => { s with visiting := s.visiting.insert name }
+  for depName in ConstantInfo.getUsedConstantsAsSet cinfo do
+    if declMap.contains depName then
+      topoSortRetainedDeclsVisit declMap depName
+  modify fun s =>
+    { s with
+      visiting := s.visiting.erase name
+      visited := s.visited.insert name
+      ordered := s.ordered.push cinfo }
+
+--AI Slop that works, TODO review
+private def topoSortRetainedDecls (declMap : Std.HashMap Name ConstantInfo) : TermElabM (Array ConstantInfo) := do
+  profileitM Exception s!"topoSortRetainedDecls" (← getOptions) do
+    let (_, s) ← (do
+      for name in declMap.keys do
+        topoSortRetainedDeclsVisit declMap name
+    : StateRefT TopoRetainedState TermElabM Unit) |>.run {}
+    return s.ordered
+
+/-- Turn a `ConstantInfo` into a declaration. Stolen from mathlib -/
+def Lean.ConstantInfo.toDeclaration! : ConstantInfo → Declaration
+  | .defnInfo   info => Declaration.defnDecl info
+  | .thmInfo    info => Declaration.thmDecl     info
+  | .axiomInfo  info => Declaration.axiomDecl   info
+  | .opaqueInfo info => Declaration.opaqueDecl  info
+  | .quotInfo   _ => panic! "toDeclaration for quotInfo not implemented"
+  | .inductInfo _ => panic! "toDeclaration for inductInfo not implemented"
+  | .ctorInfo   _ => panic! "toDeclaration for ctorInfo not implemented"
+  | .recInfo    _ => panic! "toDeclaration for recInfo not implemented"
+
+private def replayRetainedDecls (decls : Array ConstantInfo) : TermElabM Unit := do
+profileitM Exception s!"replayRetainedDecls" (← getOptions) do
+  for cinfo in decls do
+    addDecl cinfo.toDeclaration!
 
 /- TODO adapt syntax to take into account:
 - docstrings
@@ -84,38 +160,12 @@ def elabModDef : ModularElab := fun stx =>
     let modifiers ← elabModifiers mod
     let modifiers := {modifiers with computeKind := .noncomputable} -- For now, generated expressions contain `.brecOns` often, which the lean compiler doesn't currently handle.
     let termination_hint ← elabTerminationHints termination_stx
-    -- let mut view ←
-      -- withExporting (isExporting := modifiers.visibility.isInferredPublic (← getEnv)) do
-        -- mkDefView modifiers _
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
     let newFunName := (← getCurrNamespace) ++ newFun.getId
     withRef stx do
     let cinfo ← getConstInfo oldFunName
     unless cinfo.hasValue do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
-
-    -- let oldValue ← unfoldAuxDecls cinfo
-    -- let mut mappedValue ← modmap (← get) oldValue
-
-    -- let mvars ← getMVarsNoDelayed mappedValue
-    -- unless mvars.isEmpty do
-    --   let some tac := tacs
-    --     | throwError "missing tactics"
-    --   solveGoalsWithTactic tac mvars.toList
-    -- mappedValue ← instantiateMVars mappedValue
-    -- unless !(mappedValue.hasExprMVar) do
-    --   throwError "In {newFunName}: `mod_def` generated unresolved metavariables"
-    -- let preDef := { ref := stx
-    --                 kind := cinfo.kind!
-    --                 levelParams := cinfo.levelParams
-    --                 modifiers := modifiers
-    --                 declName := newFunName
-    --                 binders := .missing
-    --                 type := ← inferType mappedValue
-    --                 value := mappedValue
-    --                 termination := termination_hint }
-
-    -- addPreDefinitions (← getLCtx, ← getLocalInstances) _
 
     let extraMapNames ← auxDefs oldFunName
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
@@ -126,8 +176,6 @@ def elabModDef : ModularElab := fun stx =>
     mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName false)
 
     let oldEnv ← getEnv
-
-    -- for {cinfo, newName, type, ..} in mapHeaders do
 
     let mut mvars := []
     let mut mappedValues := #[]
@@ -183,8 +231,18 @@ def elabModDef : ModularElab := fun stx =>
     if mappedValues.any Expr.hasExprMVar then
       throwError "`mod_def` generated unresolved metavariables"
     addDeclarationRangesFromSyntax newFunName newFun
+    let tempAxiomNames : NameSet := Id.run do
+      let mut names : NameSet := {}
+      for {newName, ..} in mapHeaders do
+        names := names.insert newName
+      return names
+    let retainedRoots := collectExprConstants (mappedValues ++ mappedTypes)
+    let retainedDeclMap ← collectRetainedDecls oldEnv tempAxiomNames retainedRoots
+    let retainedDecls ← topoSortRetainedDecls retainedDeclMap
+    trace[Modular.Elab] "Retaining {retainedDecls.size} generated declarations from tactic elaboration"
     trace[Modular.Elab] "Setting old env back"
     setEnv oldEnv
+    replayRetainedDecls retainedDecls
     let mut predefs : Array PreDefinition:= #[]
     for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
       let predef := { ref := stx
@@ -201,70 +259,4 @@ def elabModDef : ModularElab := fun stx =>
     addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
     trace[Modular.Elab] "Predefs elaborated successfully"
 
-      /-After that we need to:
-        - generate the appropriate predefs from those
-        - set the original env back
-        - addPreDefinitions
-      -/
-        -- solveGoalsWithTactic tac mvars.toList
-        -- mappedValue ← instantiateMVars mappedValue
-        -- unless !(mappedValue.hasExprMVar) do
-          -- throwError "In {newName}: `mod_def` generated unresolved metavariables"
-        -- checkNotAlreadyDeclared newName
-        -- addDecl <| .defnDecl {
-          -- name := newName
-          -- levelParams := cinfo.levelParams
-          -- type := ← inferType mappedValue
-          -- value := mappedValue
-          -- hints := cinfo.hints
-          -- safety := if cinfo.isUnsafe then .unsafe else .safe
-        -- }
-        -- enableRealizationsForConst newName
-        -- if isAux then
-          -- addAuxMapping cinfo.name newName
-        -- else
-          -- let levelParams := cinfo.levelParams
-          -- TODO add behind a function
-          -- let newMapEntry := {
-            -- translation := mkConst newName (levelParams.map .param)
-            -- levelParams := levelParams
-            -- numArgs := 0
-            -- numHoles := 0}
-          -- modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
-      -- if tacs.size > nextTacIdx then
-        -- throwError "Too many tactic blocks provided"
-      -- addDeclarationRangesFromSyntax newFunName newFun
   | _ => throwUnsupportedSyntax
-
-
-/- This is super great news, it means we can elaborate many preDefs together, even if they don't have the same levelParams, as long as they're not part of the same SCC, which is exactly what I need !!-/
--- run_cmd liftTermElabM do
---   let preDef1 : PreDefinition := { ref := .missing
---                                    kind := .def
---                                    levelParams := [`u]
---                                    modifiers := default
---                                    declName := `test
---                                    binders := .missing
---                                    type := mkSort (.param `u)
---                                    value := mkConst `PUnit [.param `u]
---                                    termination := { ref := .missing
---                                                     terminationBy?? := none
---                                                     terminationBy? := none
---                                                     partialFixpoint? := none
---                                                     decreasingBy? := none
---                                                     extraParams := 0 } }
---   let preDef2 : PreDefinition := { ref := .missing
---                                    kind := .def
---                                    levelParams := []
---                                    modifiers := default
---                                    declName := `test2
---                                    binders := .missing
---                                    type := mkSort 0
---                                    value := mkConst `test [0]
---                                    termination := { ref := .missing
---                                                     terminationBy?? := none
---                                                     terminationBy? := none
---                                                     partialFixpoint? := none
---                                                     decreasingBy? := none
---                                                     extraParams := 0 } }
---   addPreDefinitions (← getLCtx, ← getLocalInstances) #[preDef1,preDef2]
