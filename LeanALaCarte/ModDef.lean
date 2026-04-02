@@ -1,11 +1,14 @@
-import LeanALaCarte.Basic
-import LeanALaCarte.Elab
 import Lean.Parser.Command
 import Lean.Parser.Tactic
+import Lean.Elab.MutualDef
+import Lean.Meta.Tactic.Try
+import LeanALaCarte.Basic
+import LeanALaCarte.Elab
 import LeanALaCarte.CollectDelayedAssignementsWithArgs
 import LeanALaCarte.AuxMapping
 import LeanALaCarte.CollectAuxDefs
-import Lean.Elab.MutualDef
+import LeanALaCarte.UnfoldEqns
+
 open Lean Parser Elab Meta Command
 
 def Lean.ConstantInfo.kind! (cinfo : ConstantInfo) : DefKind := match cinfo with
@@ -13,6 +16,21 @@ def Lean.ConstantInfo.kind! (cinfo : ConstantInfo) : DefKind := match cinfo with
   | .thmInfo _ => .theorem
   | .opaqueInfo _ => .opaque
   | _ => unreachable!
+
+def getEqDef? (n : Name) : MetaM (Option Expr) := do
+  let some edn ← Try.Collector.getEqDefDecl? n | return none
+  let edth ← getConstInfo edn
+  forallTelescope edth.type fun xs e =>
+    let_expr Eq _ _ rhs := e | unreachable!
+    mkLambdaFVars xs rhs
+
+def modmapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
+  let map ← get
+  let fallback _ := modmap map cinfo.value!
+  if isAux then fallback ()
+  else
+    let some value ← getEqDef? cinfo.name | fallback ()
+    modmap map value
 
 private partial def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
   unless goals.isEmpty do
@@ -151,12 +169,12 @@ Actually, `DefView` contain the value as a syntax, not as an Expr, this is not i
 -/
 
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" ident "extends" ident Termination.suffix (ppDedent(ppLine) "where" ppDedent(ppLine) tacticSeqIndentGt)? : modular_command
+  declModifiers "mod_def" ident "extends" ident (ppDedent(ppLine) "where" ppDedent(ppLine) tacticSeqIndentGt)?  Termination.suffix : modular_command
 
 @[modular_elab modular_mod_def, incremental]
 def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $termination_stx $[where $tacs]?) => liftModularM do
+  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $tacs]? $termination_stx) => liftModularM do
     let modifiers ← elabModifiers mod
     let modifiers := {modifiers with computeKind := .noncomputable} -- For now, generated expressions contain `.brecOns` often, which the lean compiler doesn't currently handle.
     let termination_hint ← elabTerminationHints termination_stx
@@ -166,8 +184,12 @@ def elabModDef : ModularElab := fun stx =>
     let cinfo ← getConstInfo oldFunName
     unless cinfo.hasValue do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
-
-    let extraMapNames ← auxDefs oldFunName
+    let unfoldEqn? ← getUnfoldEqnFor? oldFunName
+    let extraMapNames ←
+      if let some unfoldEqn := unfoldEqn? then
+        auxDefs unfoldEqn oldFunName
+      else
+        auxDefs oldFunName
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
     let mut mapHeaders := #[]
     for oldAuxName in extraMapNames do
@@ -181,10 +203,26 @@ def elabModDef : ModularElab := fun stx =>
     let mut mappedValues := #[]
     let mut mappedTypes := #[]
 
+    -- What follows from here is a horrible mess and should definitely be reworked to be more principled in the very near future..
     for {cinfo, newName, isAux, ..} in mapHeaders do
       trace[Modular.Elab] "elaborating {newName}"
-      let map ← get
-      let mut mappedValue ← modmap map cinfo.value!
+      -- If a function isn't an auxiliary, it might be recursive. As such, the shape of the function should be known (i.e we dont' have holes in it for now), and we need the mapping to already exist before translating the term, since the function might itself appear in its `eq_def` body.
+      if !isAux then
+        -- TODO put behind a function
+        let levelParams := cinfo.levelParams
+        let newMapEntry := {
+          translation := mkConst newName (levelParams.map .param)
+          levelParams := levelParams
+          numArgs := 0
+          numHoles := 0}
+        modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
+        let mappedType ← modmap (← get) cinfo.type
+        addDecl <| .axiomDecl
+          {  name := newName
+             levelParams := cinfo.levelParams
+             type := mappedType
+             isUnsafe := false }
+      let mut mappedValue ← modmapValueOrEqDef cinfo isAux
       if newName.isMatcher then
         trace[Modular.Elab] "matcher detected {newName}"
         mappedValue ← lambdaTelescope mappedValue fun xs e => do
@@ -201,21 +239,13 @@ def elabModDef : ModularElab := fun stx =>
       if mappedType.hasMVar then
         throwError "Type contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
       mappedTypes := mappedTypes.push mappedType
-      addDecl <| .axiomDecl {  name := newName
-                               levelParams := cinfo.levelParams
-                               type := mappedType
-                               isUnsafe := false }
       if isAux then
+        addDecl <| .axiomDecl
+          {  name := newName
+             levelParams := cinfo.levelParams
+             type := mappedType
+             isUnsafe := false }
         addAuxMapping cinfo.name newName
-      else
-        -- TODO put behind a function
-        let levelParams := cinfo.levelParams
-        let newMapEntry := {
-          translation := mkConst newName (levelParams.map .param)
-          levelParams := levelParams
-          numArgs := 0
-          numHoles := 0}
-        modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
 
     trace[Modular.Elab] "Mapped values : {mappedValues}"
     if mvars.isEmpty  then
@@ -260,3 +290,22 @@ def elabModDef : ModularElab := fun stx =>
     trace[Modular.Elab] "Predefs elaborated successfully"
 
   | _ => throwUnsupportedSyntax
+
+instance : ToString Match.AltParamInfo where
+  toString info :=
+  let {numFields, numOverlaps, hasUnitThunk} := info
+  s!"⦃ numFields : {numFields}, numOverlaps : {numOverlaps}, hasUnitThunk : {hasUnitThunk} ⦄"
+
+instance : ToString MatcherInfo where
+  toString info :=
+  let {numParams, numDiscrs, altInfos, uElimPos?, ..} := info
+  s!"⦃ numParams : {numParams},
+  numDiscrs : {numDiscrs},
+  altInfos : {altInfos},
+  uElimPos? : {uElimPos?} ⦄"
+
+set_option pp.match true
+#print Nat.add.eq_def
+
+run_cmd liftTermElabM do
+  logInfo m!"{(← getMatcherInfo? `Nat.add.match_1) |>.get!}"

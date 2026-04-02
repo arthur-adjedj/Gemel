@@ -41,14 +41,24 @@ def Vec.append (v₁ : Vec α n) (v₂ : Vec α k) : Vec α (k.add n) :=
   | cons (n := n) a v₁ => cons a (v₁.append v₂)
 termination_by sizeOf v₁
 
+def Nat.add' (n : Nat) : Nat → Nat
+  | .zero => n
+  | .succ k => (Nat.add' n k).succ
+
+set_option pp.match false in
+#check Nat.add.eq_def
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
-  mod_def Natt.add extends Nat.add where
+  set_option trace.Modular.Elab true in
+  set_option trace.Modular.Subst true in
+  set_option trace.Elab.definition.structural true in
+  mod_def Natt.add extends Nat.add' where
     expose_names
-    intro a ⟨h,_⟩
-    exact (h x_3).succ'
+    intro a
+    exact (Natt.add n a).succ'
+  -- termination_by structural x => x
 
 modular
   inductive Vecc (α : Type) extends Vec α where

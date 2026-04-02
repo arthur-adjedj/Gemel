@@ -33,7 +33,6 @@ partial def collectAuxDefs (root cname : Name) : StateRefT S MetaM Unit := do
         map.insert name (NameSet.insert {} cname)
     collectAuxDefs root name
 
-
 partial def topoAuxDefs (map : S) : List Name :=
   let set := NameSet.ofList map.keys
   let (_,_,s) := go |>.run (set,[])
@@ -52,6 +51,6 @@ where
         visit depsOnName
     modify fun (set,res) => (set.erase n, n::res)
 
-def auxDefs (n : Name) : MetaM (List Name) := do
-  let (_,s) ← collectAuxDefs n n |>.run {}
+def auxDefs (n : Name) (root := n) : MetaM (List Name) := do
+  let (_,s) ← collectAuxDefs root n |>.run {}
   return topoAuxDefs s

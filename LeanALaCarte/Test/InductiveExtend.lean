@@ -141,9 +141,13 @@ def Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
 
 def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
   | var h => .var (R _ h)
+set_option pp.match false in
 
-set_option trace.profiler true
-set_option trace.Elab.definition.body true
+run_cmd liftTermElabM do
+  let n? ← getEqDef? `Var.wk
+  logInfo n?
+-- set_option trace.profiler true
+-- set_option trace.Elab.definition.body true
 modular
   inductive Term extends Var where
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
