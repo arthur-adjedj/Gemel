@@ -16,7 +16,7 @@ open Lean Parser Elab Meta Command
 --   for i in [:numExtraArgs] do
 --     auxArgs := auxArgs.push (holeBVar i)
 --   let auxExt : ModularExtension := {
---     translation := mkAppN newAuxFVar auxArgs
+--     expr := mkAppN newAuxFVar auxArgs
 --     levelParams := oldInfo.levelParams
 --     numArgs := oldNumArgs
 --     numHoles := numExtraArgs
@@ -43,7 +43,7 @@ def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) 
   for i in [:numExtraArgs] do
     auxArgs := auxArgs.push (holeBVar i)
   let auxExt : ModularExtension := {
-    translation := mkAppN (mkConst newName (oldInfo.levelParams.map .param)) auxArgs
+    expr := mkAppN (mkConst newName (oldInfo.levelParams.map .param)) auxArgs
     levelParams := oldInfo.levelParams
     numArgs := oldNumArgs
     numHoles := numExtraArgs

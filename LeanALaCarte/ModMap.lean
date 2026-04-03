@@ -2,22 +2,22 @@ import LeanALaCarte.Elab
 import LeanALaCarte.ModularCommand
 open Lean Meta Elab Command Term
 
-partial def modmapAux (map : ModularMap) (e : Expr): MetaM Expr := do
+partial def modMapAux (map : ModularMap) (e : Expr): MetaM Expr := do
   withIncRecDepth do
   -- withNewMCtxDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"modmapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
+  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
   let fn := e.getAppFn
   let args := e.getAppArgs
   if let .const fnName lvls := fn then -- TODO manage universes better
-    -- One might want to, if a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), delta-reduce the constant and map it as well.
+    -- If a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), one might want, to delta-reduce the constant and map it as well.
     -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
     let ext? := map[fnName.eraseMacroScopes]?
     if let some ext := ext? then
       --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
       unless ext.numArgs <= args.size do
-        return ← modmapAux map (← Meta.etaExpand e)
-      let newArgs ← modmapArgs args
-      let res := ext.translation
+        return ← modMapAux map (← Meta.etaExpand e)
+      let newArgs ← modMapArgs args
+      let res := ext.expr
         |>.instantiateLevelParams ext.levelParams lvls
         |>.instantiateRev newArgs[:ext.numArgs]
       trace[Modular.Subst] m!"args instantiated : {res}"
@@ -35,15 +35,15 @@ partial def modmapAux (map : ModularMap) (e : Expr): MetaM Expr := do
       let res ← instantiateMVars res
       return res
     else
-      let newArgs ← modmapArgs args
+      let newArgs ← modMapArgs args
       return mkAppN fn newArgs
   else
     let newFn ← traverse fn
-    let newArgs ← modmapArgs args
+    let newArgs ← modMapArgs args
     return mkAppN newFn newArgs
 where
-  modmapArgs args := args.foldlM (init := Array.emptyWithCapacity args.size) fun nargs e => do
-    let arg ← modmapAux map e
+  modMapArgs args := args.foldlM (init := Array.emptyWithCapacity args.size) fun nargs e => do
+    let arg ← modMapAux map e
     return nargs.push arg
 
   traverse e: MetaM Expr := match e with
@@ -59,33 +59,33 @@ where
         -/
         panic! "todo"
       else
-        let newStruct ← modmapAux map struct
+        let newStruct ← modMapAux map struct
         return .proj tyName idx newStruct
     | .letE ..
     | .lam .. =>
-      lambdaLetTelescope e fun xs e => withmodmappedLctx xs do
-        let newe ← modmapAux map e
+      lambdaLetTelescope e fun xs e => withmodMappedLctx xs do
+        let newe ← modMapAux map e
         mkLambdaFVars xs newe
     | .forallE .. =>
-      forallTelescope    e fun xs e => withmodmappedLctx xs  do
-        let newe ← modmapAux map e
+      forallTelescope    e fun xs e => withmodMappedLctx xs  do
+        let newe ← modMapAux map e
         mkForallFVars xs newe
-    | .mdata _ e => modmapAux map e
+    | .mdata _ e => modMapAux map e
     | _ => unreachable!
 
-  withmodmappedLctx {α} (xs : Array Expr) (k : MetaM α) : MetaM α := do
+  withmodMappedLctx {α} (xs : Array Expr) (k : MetaM α) : MetaM α := do
     let localInsts ← Meta.getLocalInstances
     let mut lctx ← getLCtx
     for e in xs do
       let some lcdl := lctx.findFVar? e | unreachable!
-      let ty ← Meta.withLCtx lctx localInsts (modmapAux map lcdl.type)
+      let ty ← Meta.withLCtx lctx localInsts (modMapAux map lcdl.type)
       lctx := lctx.modifyLocalDecl e.fvarId! (·.setType ty)
       let some value := lcdl.value? | continue
-      let value← Meta.withLCtx lctx localInsts (modmapAux map value)
+      let value← Meta.withLCtx lctx localInsts (modMapAux map value)
       lctx := lctx.modifyLocalDecl e.fvarId! (·.setValue value)
     Meta.withLCtx lctx localInsts <| k
 
-def modmap (map : ModularMap) (e : Expr) : MetaM Expr := do
-  let e ← modmapAux map e
+def modMap (map : ModularMap) (e : Expr) : MetaM Expr := do
+  let e ← modMapAux map e
   Meta.check e
   return e

@@ -1,4 +1,4 @@
-import LeanALaCarte.Basic
+import LeanALaCarte.ModMap
 
 open Lean Elab Command Term
 
@@ -11,6 +11,6 @@ def elabModularCheckTranslation : ModularElab := fun stx => do
     let map ← get
     liftTermElabM do
       let e ← elabTerm e none
-      let mappedTerm ← modmap map e
+      let mappedTerm ← modMap map e
       logInfo m!"{mappedTerm}"
   | _ => throwUnsupportedSyntax

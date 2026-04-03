@@ -1,4 +1,4 @@
-import LeanALaCarte.Basic
+import LeanALaCarte.ModMap
 import LeanALaCarte.CheckTranslation
 import LeanALaCarte.ExtendInd
 import LeanALaCarte.ModDef
@@ -25,7 +25,7 @@ def testmap : ModularMap :=
 elab "#partial_map" e:term : command =>
   liftTermElabM do
     let e ← elabTerm e none
-    let mapped_term ← modmap testmap e
+    let mapped_term ← modMap testmap e
     logInfo m!"{mapped_term}"
 
 set_option pp.mvars.levels false

@@ -1,5 +1,5 @@
 import LeanALaCarte.Elab
-import LeanALaCarte.Basic
+import LeanALaCarte.ModMap
 import Lean.Parser.Command
 import Lean.Meta.Constructions
 import LeanALaCarte.AuxMapping
@@ -30,7 +30,7 @@ def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM Ind
     return (← indVal.ctors.mapM getConstInfoCtor) ++ acc
   withLocalDeclD e.newIndName e.type fun newIndFVar => do
     let tempIndExt : ModularExtension := {
-      translation := newIndFVar
+      expr := newIndFVar
       levelParams := []
       numArgs := 0
       numHoles := 0
@@ -40,7 +40,7 @@ def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM Ind
     let tempMap := tempMap.insert e.newIndName.eraseMacroScopes tempIndExt
     let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
     let inheritedCtors ← inheritedCtors.mapM fun ctor => do
-      let ctorType ← modmap tempMap ctor.type
+      let ctorType ← modMap tempMap ctor.type
       unless !ctorType.hasMVar do
         -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
         throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
@@ -180,7 +180,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
         unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
           throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
     let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
-    let type ← modmap map type0
+    let type ← modMap map type0
     unless !type.hasMVar do
     -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
       throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
@@ -214,7 +214,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
   let newIndLevels := newIndParams.map .param
   let newRecName := mkRecName newIndName
   let numAddedCtors := extendedInductive.addedConstrs.size
-  let indExt : ModularExtension := { translation := mkConst newIndName newIndLevels
+  let indExt : ModularExtension := { expr := mkConst newIndName newIndLevels
                                      levelParams := newIndParams
                                      numArgs := 0
                                      numHoles := 0 }
@@ -224,7 +224,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     let indVal ← getConstInfoInduct indName
     for ctor in indVal.ctors do
       let newCtorName := ctor.replacePrefix indName newIndName
-      let ctorExt : ModularExtension := { translation := mkConst newCtorName newIndLevels
+      let ctorExt : ModularExtension := { expr := mkConst newCtorName newIndLevels
                                           levelParams := newIndParams
                                           numArgs := 0
                                           numHoles := 0 }
@@ -245,7 +245,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     for i in [tailStart:oldNumArgs] do
       recArgs := recArgs.push (oldArgBVar i)
     let recExt : ModularExtension := {
-      translation := mkAppN (mkConst newRecName (oldRecVal.levelParams.map .param)) recArgs
+      expr := mkAppN (mkConst newRecName (oldRecVal.levelParams.map .param)) recArgs
       levelParams := oldRecVal.levelParams
       numArgs := oldNumArgs
       numHoles := numExtraMinors
@@ -259,7 +259,7 @@ def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let extendedInd ← elabExtendedInd (← get) stx
   let newIndName := extendedInd.newIndName
   let map ← get
-  trace[Modular.Elab] m!"modmap : {(← get).toList}"
+  trace[Modular.Elab] m!"modMap : {(← get).toList}"
   let extendedInductive ← extendedInd.toInductiveView map
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
   addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)

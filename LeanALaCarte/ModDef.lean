@@ -2,7 +2,7 @@ import Lean.Parser.Command
 import Lean.Parser.Tactic
 import Lean.Elab.MutualDef
 import Lean.Meta.Tactic.Try
-import LeanALaCarte.Basic
+import LeanALaCarte.ModMap
 import LeanALaCarte.Elab
 import LeanALaCarte.CollectDelayedAssignementsWithArgs
 import LeanALaCarte.AuxMapping
@@ -24,13 +24,13 @@ def getEqDef? (n : Name) : MetaM (Option Expr) := do
     let_expr Eq _ _ rhs := e | unreachable!
     mkLambdaFVars xs rhs
 
-def modmapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
+def modMapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
   let map ← get
-  let fallback _ := modmap map cinfo.value!
+  let fallback _ := modMap map cinfo.value!
   if isAux then fallback ()
   else
     let some value ← getEqDef? cinfo.name | fallback ()
-    modmap map value
+    modMap map value
 
 private partial def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
   unless goals.isEmpty do
@@ -74,7 +74,7 @@ deriving Inhabited
 
 def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader := do
   let cinfo ← getConstInfo oldName
-  let type ← modmap (← get) cinfo.type
+  let type ← modMap (← get) cinfo.type
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
@@ -162,7 +162,7 @@ profileitM Exception s!"replayRetainedDecls" (← getOptions) do
 - attributes
 - termination hints
 - `where` clauses
-- (maybe ?) make the current `by` goals be filled in as holes in `where finally` ? (this would be non-trivial in cases where the holes appear in auxiliary defs rather than the "real" one. One solution could be to inline/delta-reduce auxiliary defs that aren't matchers, and translating the core def directly, leaving the job of re-abstracting relevant parts of the code to the usual elaborator for `PreDef`s. The big danger to doing that is obviously performance. `modmap`ed terms need to be `check`ed to instantiate the type of the introduced mvars for now, and doing so on terms containing very large proof terms (e.g `grind` or `omega` proofs) is bound to be expensive. A solution would be to get rid of `Meta.check` in `modmap`, but I'm confident type-checking is still called a fair few times when elaborating PreDefs, so this doesn't solve the issue of abstracting the proofs at the right time.)
+- (maybe ?) make the current `by` goals be filled in as holes in `where finally` ? (this would be non-trivial in cases where the holes appear in auxiliary defs rather than the "real" one. One solution could be to inline/delta-reduce auxiliary defs that aren't matchers, and translating the core def directly, leaving the job of re-abstracting relevant parts of the code to the usual elaborator for `PreDef`s. The big danger to doing that is obviously performance. `modMap`ed terms need to be `check`ed to instantiate the type of the introduced mvars for now, and doing so on terms containing very large proof terms (e.g `grind` or `omega` proofs) is bound to be expensive. A solution would be to get rid of `Meta.check` in `modMap`, but I'm confident type-checking is still called a fair few times when elaborating PreDefs, so this doesn't solve the issue of abstracting the proofs at the right time.)
 
 Once that is all done, translate that syntax to a `DefView` and elaborate it like any other function, making use of all the niceties the lean elaborator offers :D
 Actually, `DefView` contain the value as a syntax, not as an Expr, this is not ideal because it implies needing to first delaborate the translated term before re-elaborating it.. Let's try to translate things directly to `PreDef`s instead, this will be a bit of a PITA...
@@ -211,18 +211,18 @@ def elabModDef : ModularElab := fun stx =>
         -- TODO put behind a function
         let levelParams := cinfo.levelParams
         let newMapEntry := {
-          translation := mkConst newName (levelParams.map .param)
+          expr := mkConst newName (levelParams.map .param)
           levelParams := levelParams
           numArgs := 0
           numHoles := 0}
         modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
-        let mappedType ← modmap (← get) cinfo.type
+        let mappedType ← modMap (← get) cinfo.type
         addDecl <| .axiomDecl
           {  name := newName
              levelParams := cinfo.levelParams
              type := mappedType
              isUnsafe := false }
-      let mut mappedValue ← modmapValueOrEqDef cinfo isAux
+      let mut mappedValue ← modMapValueOrEqDef cinfo isAux
       if newName.isMatcher then
         trace[Modular.Elab] "matcher detected {newName}"
         mappedValue ← lambdaTelescope mappedValue fun xs e => do
@@ -241,10 +241,10 @@ def elabModDef : ModularElab := fun stx =>
       mappedTypes := mappedTypes.push mappedType
       if isAux then
         addDecl <| .axiomDecl
-          {  name := newName
-             levelParams := cinfo.levelParams
-             type := mappedType
-             isUnsafe := false }
+          { name := newName
+            levelParams := cinfo.levelParams
+            type := mappedType
+            isUnsafe := false }
         addAuxMapping cinfo.name newName
 
     trace[Modular.Elab] "Mapped values : {mappedValues}"

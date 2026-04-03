@@ -12,17 +12,17 @@ def ModularCommand := TSyntax `modular_command
 -- This is important eg for cases where users extend a function with additional arguments that require new universes
 /- A modular extension is a term with some loose bvars. The first `numArgs` bvars correspond to the instantiation of the original term's arguments, the others correspond to holes that need to be filled in by users. -/
 structure ModularExtension where
-  translation : Expr
+  expr : Expr
   levelParams : List Name
   numArgs : Nat
   numHoles : Nat
 deriving Inhabited
 
 instance : ToMessageData ModularExtension where
-  toMessageData m := m!"⦃ levelParams : {m.levelParams}\nnumArgs : {m.numArgs}\nnumHoles : {m.numHoles}\ntranslation: {indentExpr m.translation}⦄"
+  toMessageData m := m!"⦃ levelParams : {m.levelParams}\nnumArgs : {m.numArgs}\nnumHoles : {m.numHoles}\nexpr: {indentExpr m.expr}⦄"
 
 instance : ToString ModularExtension where
-  toString map := toString map.translation
+  toString map := toString map.expr
 
 abbrev ModularMap := Std.HashMap Name ModularExtension
 
