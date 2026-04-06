@@ -47,6 +47,7 @@ def Nat.add' (n : Nat) : Nat → Nat
 
 set_option pp.match false in
 #check Nat.add.eq_def
+
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
@@ -56,9 +57,10 @@ modular
   set_option trace.Elab.definition.structural true in
   mod_def Natt.add extends Nat.add' where
     expose_names
-    intro a
-    exact (Natt.add n a).succ'
-  -- termination_by structural x => x
+    exact match x with
+      | .zero => n
+      | .succ k => (Natt.add n k).succ
+      | .succ' k => (Natt.add n k).succ'
 
 modular
   inductive Vecc (α : Type) extends Vec α where

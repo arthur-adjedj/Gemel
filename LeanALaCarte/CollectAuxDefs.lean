@@ -26,11 +26,13 @@ partial def collectAuxDefs (root cname : Name) : StateRefT S MetaM Unit := do
   for name in names do
     unless name.isAuxDeclOf root do
       continue
-    modify fun map =>
-      if map.contains name then
-        map.modify name (·.insert cname)
-      else
-        map.insert name (NameSet.insert {} cname)
+    -- matchers get abstracted away, so we shouldn't add them as functions to be translated
+    unless name.isMatcher do
+      modify fun map =>
+        if map.contains name then
+          map.modify name (·.insert cname)
+        else
+          map.insert name (NameSet.insert {} cname)
     collectAuxDefs root name
 
 partial def topoAuxDefs (map : S) : List Name :=

@@ -8,7 +8,7 @@ syntax (name := modular_check_translation) "#check_translation" ppLine term : mo
 def elabModularCheckTranslation : ModularElab := fun stx => do
   match stx with
   | `(modular_command| #check_translation $e:term) => do
-    let map ← get
+    let map ← getMap
     liftTermElabM do
       let e ← elabTerm e none
       let mappedTerm ← modMap map e

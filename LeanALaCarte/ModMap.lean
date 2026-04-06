@@ -5,14 +5,11 @@ open Lean Meta Elab Command Term
 partial def modMapAux (map : ModularMap) (e : Expr): MetaM Expr := do
   withIncRecDepth do
   -- withNewMCtxDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
-  let fn := e.getAppFn
-  let args := e.getAppArgs
+  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do e.withApp fun fn args => do
   if let .const fnName lvls := fn then -- TODO manage universes better
     -- If a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), one might want, to delta-reduce the constant and map it as well.
     -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
-    let ext? := map[fnName.eraseMacroScopes]?
-    if let some ext := ext? then
+    if let some ext := map[fnName.eraseMacroScopes]? then
       --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
       unless ext.numArgs <= args.size do
         return ← modMapAux map (← Meta.etaExpand e)
@@ -29,14 +26,31 @@ partial def modMapAux (map : ModularMap) (e : Expr): MetaM Expr := do
       trace[Modular.Subst] m!"mvars instantiated : {res}"
       let res := mkAppN res newArgs[ext.numArgs:]
       trace[Modular.Subst] m!"with extra args : {res}"
-      if ext.numArgs != 0 then
-        check res  --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
+      -- Let's just `check` the entire translated expression in `modmap` instead. Hopefully it's okay..
+      -- if ext.numArgs != 0 then
+        -- check res  --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
         -- TODO For (much) better performance in the future, rather than `check` every translation that introduces an mvar, it would make a lot more sense to store the information necessary to infer the type of those mvars in the `ModularExtension`s, I just haven't thought hard enough about how to do that well for now
       let res ← instantiateMVars res
       return res
-    else
+    let fallback _ : MetaM Expr := do
       let newArgs ← modMapArgs args
-      return mkAppN fn newArgs
+      pure (mkAppN fn newArgs)
+    let some info ← getMatcherInfo? fnName | fallback ()
+    trace[Modular.Subst] "matcher {fnName} detected"
+    let mvarLCtx ← getLCtx
+    forallTelescopeReducing (← inferType fn) fun xs _ => do
+      let discrs_ty_hds ← xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs].toArray.mapM (inferType · >>= whnf >>= pure ∘ Expr.getAppFn)
+      trace[Modular.Subst] "discrs_ty_hds : {discrs_ty_hds}"
+      -- If one of the discriminants is an extended type, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
+      for hd in discrs_ty_hds do
+        let some ⟨hd_name,_⟩ := hd.const? |
+          throwError "That's unexpected, expected a function head, found {hd}"
+        if map.contains hd_name then
+          let mvar_ty ← withLCtx' mvarLCtx (inferType e >>= modMapAux map)
+          trace[Modular.Subst] "new matcher type : {mvar_ty}"
+          let mvar ← mkFreshExprMVar mvar_ty .syntheticOpaque
+          return mvar
+      fallback ()
   else
     let newFn ← traverse fn
     let newArgs ← modMapArgs args

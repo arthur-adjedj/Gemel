@@ -1,0 +1,5 @@
+https://github.com/mesabloo/distpcal-compiler
+https://github.com/felko/cc-deconstructed/blob/main/CCDeconstructed/Syntax.lean
+Mathlib's Primrec/PartRec
+- Primrec: https://github.com/leanprover-community/mathlib4/blob/master/Mathlib/Computability/Primrec/Basic.lean#L58-L68
+- PartRec: https://github.com/leanprover-community/mathlib4/blob/master/Mathlib/Computability/Partrec.lean#L160-L170

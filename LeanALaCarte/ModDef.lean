@@ -25,7 +25,7 @@ def getEqDef? (n : Name) : MetaM (Option Expr) := do
     mkLambdaFVars xs rhs
 
 def modMapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
-  let map ← get
+  let map ← getMap
   let fallback _ := modMap map cinfo.value!
   if isAux then fallback ()
   else
@@ -170,7 +170,9 @@ Actually, `DefView` contain the value as a syntax, not as an Expr, this is not i
 
 syntax (name := modular_mod_def)
   declModifiers "mod_def" ident "extends" ident (ppDedent(ppLine) "where" ppDedent(ppLine) tacticSeqIndentGt)?  Termination.suffix : modular_command
-
+instance : ToMessageData PreDefinition where
+  toMessageData m :=
+    m!"{m.declName} := {m.value} : {m.type}"
 @[modular_elab modular_mod_def, incremental]
 def elabModDef : ModularElab := fun stx =>
   match stx with
@@ -216,7 +218,7 @@ def elabModDef : ModularElab := fun stx =>
           numArgs := 0
           numHoles := 0}
         modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
-        let mappedType ← modMap (← get) cinfo.type
+        let mappedType ← modMap (← getMap) cinfo.type
         addDecl <| .axiomDecl
           {  name := newName
              levelParams := cinfo.levelParams
@@ -237,7 +239,7 @@ def elabModDef : ModularElab := fun stx =>
       mappedValues := mappedValues.push mappedValue
       let mappedType ← inferType mappedValue
       if mappedType.hasMVar then
-        throwError "Type contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
+        throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
       mappedTypes := mappedTypes.push mappedType
       if isAux then
         addDecl <| .axiomDecl
@@ -248,6 +250,7 @@ def elabModDef : ModularElab := fun stx =>
         addAuxMapping cinfo.name newName
 
     trace[Modular.Elab] "Mapped values : {mappedValues}"
+    trace[Modular.Elab] "Mvars : {mvars.map Expr.mvar}"
     if mvars.isEmpty  then
       if tacs.isSome then
         throwError "Unexpected tactic block: the translation generated no obligations"
@@ -285,7 +288,7 @@ def elabModDef : ModularElab := fun stx =>
                       value := mappedValue
                       termination := if isAux then .none else termination_hint }
       predefs := predefs.push predef
-    trace[Modular.Elab] "Predefs constructed successfully"
+    trace[Modular.Elab] "Predefs : {predefs}"
     addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
     trace[Modular.Elab] "Predefs elaborated successfully"
 

@@ -258,7 +258,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
 def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let extendedInd ← elabExtendedInd (← get) stx
   let newIndName := extendedInd.newIndName
-  let map ← get
+  let map ← getMap
   trace[Modular.Elab] m!"modMap : {(← get).toList}"
   let extendedInductive ← extendedInd.toInductiveView map
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"

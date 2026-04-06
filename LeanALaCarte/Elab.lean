@@ -25,6 +25,12 @@ instance : ToString ModularExtension where
   toString map := toString map.expr
 
 abbrev ModularMap := Std.HashMap Name ModularExtension
+class MonadModular (m) [Monad m] where
+  getMap : m ModularMap
+export MonadModular (getMap)
+
+instance [Monad m] : MonadModular (StateT ModularMap m) where
+  getMap m := pure (m,m)
 
 abbrev ModularM := StateT ModularMap TermElabM
 abbrev ModularElabM := StateT ModularMap CommandElabM
