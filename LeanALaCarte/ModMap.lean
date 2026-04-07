@@ -55,6 +55,9 @@ partial def modMapAux (e : Expr): ModularM Expr := do
           trace[Modular.Subst] "new matcher type : {mvar_ty}"
           let mvar ← withLCtx' mvarLCtx <| mkFreshExprMVar mvar_ty .syntheticOpaque
           trace[Modular.Subst] "matcher mvar : {mvar}"
+          addMatchExtension { matchName := fnName
+                              mvar := mvar.mvarId!
+                              originalMatch := e }
           return mvar
       fallback ()
   else
