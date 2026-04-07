@@ -1,4 +1,9 @@
-import LeanALaCarte.Elab
+module
+
+public meta import LeanALaCarte.Elab
+
+@[expose] public meta section
+
 open Lean Parser Elab Meta Command
 
 -- def mkAuxTempMapping (oldName : Name) (newAuxFVar : Expr) : ModularM (Name × ModularExtension) := do
@@ -54,3 +59,5 @@ def addAuxMapping (oldName newName : Name) : ModularM Unit := do
   let (name,mapping) ← mkAuxMapping oldName newName
   trace[Modular.Elab] m!"Adding mapping {oldName} ⇒ {mapping}"
   modify fun m => m.insert name mapping
+
+end

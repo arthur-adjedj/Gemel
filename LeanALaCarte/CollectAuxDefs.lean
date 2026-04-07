@@ -1,7 +1,11 @@
-import Std.Data.HashMap.Basic
-import Std.Data.HashSet.Basic
-import Lean.Meta.Basic
-import Lean.Elab
+module
+
+public import Std.Data.HashMap.Basic
+public import Std.Data.HashSet.Basic
+public import Lean.Meta.Basic
+public import Lean.Elab
+
+@[expose] public section
 /-! Collect all auxiliary definitions of a given definition, return them in a topological sort.-/
 
 open Lean Meta Elab

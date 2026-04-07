@@ -1,6 +1,10 @@
+module
 
-import Lean
-import LeanALaCarte.ModMap
+public import Lean
+public import LeanALaCarte.ModMap
+
+@[expose] public section
+
 open Lean Elab Term Meta Match
 
 structure MatcherBundle where

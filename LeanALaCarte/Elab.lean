@@ -1,6 +1,10 @@
-import LeanALaCarte.Util
-import Lean.Meta.Check
-import Lean.Elab
+module
+
+public import LeanALaCarte.Util
+public meta import Lean.Meta.Check
+public meta import Lean.Elab
+
+@[expose] public section
 
 open Lean Meta Elab Command Term
 
@@ -37,6 +41,8 @@ abbrev ModularElabM := StateT ModularMap CommandElabM
 
 def liftModularM (k : ModularM α) : ModularElabM α := fun map => liftTermElabM (k map)
 
+public meta section
+
 instance [MonadLiftT m n] : MonadLiftT (StateT ρ m) (StateT ρ n) where
   monadLift m ρ := m ρ
 
@@ -62,7 +68,7 @@ instance [Monad m] [MonadRecDepth  m] : MonadRecDepth  (StateT ρ m) where
     let n ← MonadRecDepth.getMaxRecDepth
     return (n,p)
 
-def ModularElab := Syntax → ModularElabM Unit
+@[expose] def ModularElab := Syntax → ModularElabM Unit
 
 unsafe initialize modularElabAttribute : KeyedDeclsAttribute ModularElab ←
   mkElabAttribute ModularElab .anonymous `modular_elab Name.anonymous ``ModularElab "modular command"
@@ -84,7 +90,7 @@ def withoutModularCommandIncrementality (cond : Bool) (act : ModularElabM α) : 
     return !cond
   }) act
 
-private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
+def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                =>
     withInfoTreeContext
       (mkInfoTree := fun trees =>
@@ -102,45 +108,48 @@ private def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (Keye
           (elabFn.value stx))
       (fun _ => do set s; elabModularCommandUsing s stx elabFns)
 
-partial def elabModularCommand (stx : Syntax) : ModularElabM Unit :=
-  try
-    go
-  finally
-    addTraceAsMessages
-where go := do
-  let rec elabChoiceAux (args : Array Syntax) (i : Nat) : ModularElabM Unit := do
+mutual
+  partial def elabModularCommand (stx : Syntax) : ModularElabM Unit :=
+    try
+      go
+    finally
+      addTraceAsMessages
+  where go := do
+    withLogging <| withRef stx <| withIncRecDepth <| withFreshMacroScope do
+      match stx with
+      | Syntax.node _ k args =>
+        if k == nullKind then
+          -- Like regular command elaboration, disable incrementality for quoted command lists.
+          withoutModularCommandIncrementality true do
+            args.forM elabModularCommand
+        else if k.toString == "choice" then
+          elabChoiceAux args 0
+        else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
+          let s ← get
+          let env ← getEnv
+          let kNoScopes := k.eraseMacroScopes
+          let elabFns :=
+            let entries := modularElabAttribute.getEntries env k
+            if entries.isEmpty && kNoScopes != k then
+              modularElabAttribute.getEntries env kNoScopes
+            else
+              entries
+          match elabFns with
+          | []      =>
+            elabCommand stx
+              throwError "elaboration function for `{k}` has not been implemented"
+          | elabFns =>
+            elabModularCommandUsing s stx elabFns
+      | _ => throwError "unexpected command"
+
+  partial def elabChoiceAux (args : Array Syntax) (i : Nat) : ModularElabM Unit := do
     if h : i < args.size then
       catchInternalId unsupportedSyntaxExceptionId
         (elabModularCommand args[i])
         (fun _ => elabChoiceAux args (i + 1))
     else
       throwUnsupportedSyntax
-  withLogging <| withRef stx <| withIncRecDepth <| withFreshMacroScope do
-    match stx with
-    | Syntax.node _ k args =>
-      if k == nullKind then
-        -- Like regular command elaboration, disable incrementality for quoted command lists.
-        withoutModularCommandIncrementality true do
-          args.forM elabModularCommand
-      else if k.toString == "choice" then
-        elabChoiceAux args 0
-      else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
-        let s ← get
-        let env ← getEnv
-        let kNoScopes := k.eraseMacroScopes
-        let elabFns :=
-          let entries := modularElabAttribute.getEntries env k
-          if entries.isEmpty && kNoScopes != k then
-            modularElabAttribute.getEntries env kNoScopes
-          else
-            entries
-        match elabFns with
-        | []      =>
-          elabCommand stx
-            throwError "elaboration function for `{k}` has not been implemented"
-        | elabFns =>
-          elabModularCommandUsing s stx elabFns
-    | _ => throwError "unexpected command"
+end
 
 def elabModularCommands (stxs : Array (TSyntax `modular_command)): ModularElabM Unit :=
   stxs.forM elabModularCommand
@@ -210,3 +219,5 @@ def elabModularBlock : CommandElab := fun stx => do
 initialize
   registerTraceClass `Modular.Elab
   registerTraceClass `Modular.Subst
+
+end

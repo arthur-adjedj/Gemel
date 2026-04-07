@@ -1,4 +1,8 @@
-import LeanALaCarte.ModMap
+module
+
+public meta import LeanALaCarte.ModMap
+
+@[expose] public meta section
 
 open Lean Elab Command Term
 

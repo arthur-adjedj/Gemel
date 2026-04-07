@@ -1,9 +1,14 @@
-import LeanALaCarte.ModMap
-import LeanALaCarte.CheckTranslation
-import LeanALaCarte.ExtendInd
-import LeanALaCarte.ModDef
-import Lean.Meta.Check
-import Qq
+module
+
+public import LeanALaCarte.ModMap
+public import LeanALaCarte.CheckTranslation
+public import LeanALaCarte.ExtendInd
+public import LeanALaCarte.ModDef
+public import Lean.Meta.Check
+public import Qq
+
+@[expose] public section
+
 open Qq
 open Lean Meta Elab Command Term
 
@@ -15,7 +20,7 @@ inductive Natt : Type where
   | succ' : Natt → Natt
 
 -- We encode a "partial map" from `Nat` to `Natt` manually here, the objective later is to generate those (and more, e.g for `below`, `recOn`, `brecOn` etc) automatically.
-def testmap : ModularMap :=
+meta def testmap : ModularMap :=
   Std.HashMap.emptyWithCapacity 0
     |>.insert (``Nat).eraseMacroScopes ⟨q(Natt),[], 0, 0⟩
     |>.insert (``Nat.zero).eraseMacroScopes ⟨q(Natt.zero),[],0,0⟩

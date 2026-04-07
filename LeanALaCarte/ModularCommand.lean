@@ -1,11 +1,15 @@
-import LeanALaCarte.Elab
-import Lean.Elab.GuardMsgs
-import Lean.Elab.SetOption
+module
+
+public meta import LeanALaCarte.Elab
+public meta import Lean.Elab.GuardMsgs
+public meta import Lean.Elab.SetOption
+
+@[expose] public meta section
 
 open Lean Elab Command
 open Lean.Elab.Tactic.GuardMsgs
 
-private def messageToString (msg : Message) (reportPos? : Option Nat) : CommandElabM String := do
+def messageToString (msg : Message) (reportPos? : Option Nat) : CommandElabM String := do
   let mut str ← liftIO <| msg.data.toString
   unless msg.caption == "" do
     str := msg.caption ++ ":\n" ++ str
@@ -27,7 +31,7 @@ private def messageToString (msg : Message) (reportPos? : Option Nat) : CommandE
     str := str ++ "\n"
   return str
 
-private def runAndCollectModularMessages (cmd : TSyntax `modular_command) : ModularElabM MessageLog := do
+def runAndCollectModularMessages (cmd : TSyntax `modular_command) : ModularElabM MessageLog := do
   let oldState ← StateT.lift get
   StateT.lift <| modify fun st => { st with messages := .empty, snapshotTasks := #[] }
   withReader ({ · with snap? := none }) do
@@ -38,7 +42,7 @@ private def runAndCollectModularMessages (cmd : TSyntax `modular_command) : Modu
   StateT.lift <| modify fun st => { st with messages := oldState.messages, snapshotTasks := oldState.snapshotTasks }
   return msgs
 
-private def withScopedOptions (opts : Options) (x : ModularElabM Unit) : ModularElabM Unit := do
+def withScopedOptions (opts : Options) (x : ModularElabM Unit) : ModularElabM Unit := do
   let oldOpts ← StateT.lift getOptions
   StateT.lift <| modifyScope fun scope => { scope with opts := opts }
   try
@@ -92,7 +96,7 @@ def elabModularGuardMsgs : ModularElab := fun stx => do
       StateT.lift <| pushInfoLeaf (.ofCustomInfo { stx := ← StateT.lift getRef, value := Dynamic.mk (GuardMsgFailure.mk res) })
   | _ => throwUnsupportedSyntax
 
-private partial def findGuardMsgFailure (node : InfoTree) : Option (Syntax × String) :=
+partial def findGuardMsgFailure (node : InfoTree) : Option (Syntax × String) :=
   match node with
   | .node i cs =>
     match i with
@@ -155,3 +159,5 @@ def elabModularElabCommand : ModularElab := fun stx => do
     StateT.lift <| elabCommand stx[0]
   else
     throwUnsupportedSyntax
+
+end

@@ -1,6 +1,10 @@
-import LeanALaCarte.ModDef
-import LeanALaCarte.ExtendInd
-import LeanALaCarte.CheckTranslation
+module
+
+public import LeanALaCarte.ModDef
+public import LeanALaCarte.ExtendInd
+public import LeanALaCarte.CheckTranslation
+
+@[expose] public section
 
 namespace ModDefTests
 

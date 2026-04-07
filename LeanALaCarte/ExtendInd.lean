@@ -1,8 +1,14 @@
-import LeanALaCarte.Elab
-import LeanALaCarte.ModMap
-import Lean.Parser.Command
-import Lean.Meta.Constructions
-import LeanALaCarte.AuxMapping
+module
+
+public meta import LeanALaCarte.Elab
+public meta import LeanALaCarte.ModMap
+public import Lean.Parser.Command
+public meta import Lean.Meta.Constructions.CtorIdx
+public meta import Lean.Meta.Constructions.CtorElim
+public meta import LeanALaCarte.AuxMapping
+
+@[expose] public meta section
+
 open Lean Parser Elab Meta Command
 
 
@@ -64,7 +70,7 @@ def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM Ind
   - Add translation of ind type, ind constrs and ind recursors to the modular map
   - Experiment with adding translation for auxiliary defs too
 -/
-private def isInductiveFamily (numParams : Nat) (indFVar : Expr) : TermElabM Bool := do
+def isInductiveFamily (numParams : Nat) (indFVar : Expr) : TermElabM Bool := do
   let indFVarType ← inferType indFVar
   forallTelescopeReducing indFVarType fun xs _ =>
     return xs.size > numParams
@@ -83,7 +89,7 @@ private def replaceArrowBinderNames (type : Expr) (newNames : Array Name) : Expr
       type
   go type 0
 
-private partial def checkParamOccs (indFVars : Array Expr) (params : Array Expr) (ctorType : Expr) : MetaM Expr := do
+partial def checkParamOccs (indFVars : Array Expr) (params : Array Expr) (ctorType : Expr) : MetaM Expr := do
   let rec visit (e : Expr) : MetaM Unit := do
     match e with
     | .app .. =>
@@ -128,7 +134,7 @@ def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (par
         throwError m!"Unexpected resulting term{indentExpr resultingType}\nThe constructor `{ctorName}` must return a type"
     return type
 
-private def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
+def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
   (ctors : Array Syntax) : TermElabM (Array Constructor) :=
   withLocalDeclD newIndName indType fun indFVar => do
     let newIndConst := mkConst newIndName (newLevelParams.map .param)
@@ -255,7 +261,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     mkAuxMappings mkAuxNames indName newIndName
 
 @[modular_elab modular_inductive, incremental]
-def elabExtendedInductive : ModularElab := fun stx => liftModularM do
+meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let extendedInd ← elabExtendedInd (← get) stx
   let newIndName := extendedInd.newIndName
   let map ← getMap

@@ -1,14 +1,18 @@
-import Lean.Parser.Command
-import Lean.Parser.Tactic
-import Lean.Elab.MutualDef
-import Lean.Meta.Tactic.Try
-import Lean.Elab.Term.TermElabM
-import LeanALaCarte.ModMap
-import LeanALaCarte.Elab
-import LeanALaCarte.CollectDelayedAssignementsWithArgs
-import LeanALaCarte.AuxMapping
-import LeanALaCarte.CollectAuxDefs
-import LeanALaCarte.UnfoldEqns
+module
+
+public import Lean.Parser.Command
+public import Lean.Parser.Tactic
+public import Lean.Elab.MutualDef
+public import Lean.Meta.Tactic.Try
+public import Lean.Elab.Term.TermElabM
+public meta import LeanALaCarte.ModMap
+public meta import LeanALaCarte.Elab
+public meta import LeanALaCarte.CollectDelayedAssignementsWithArgs
+public meta import LeanALaCarte.AuxMapping
+public meta import LeanALaCarte.CollectAuxDefs
+public meta import LeanALaCarte.UnfoldEqns
+
+@[expose] public meta section
 
 open Lean Parser Elab Meta Command
 
@@ -33,7 +37,7 @@ def modMapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := 
     let some value ← getEqDef? cinfo.name | fallback ()
     modMap map value
 
-private partial def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
+def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
   unless goals.isEmpty do
     -- make info from `runTactic` available
     goals.forM fun goal => pushInfoTree (.hole goal)
@@ -79,11 +83,11 @@ def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
-private def collectExprConstants (exprs : Array Expr) : NameSet :=
+def collectExprConstants (exprs : Array Expr) : NameSet :=
   exprs.foldl (init := {}) fun names e => e.foldConsts names fun c cs => cs.insert c
 
 --AI Slop that works, TODO review
-private def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : NameSet)
+def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : NameSet)
     (roots : NameSet) : TermElabM (Std.HashMap Name ConstantInfo) := do
   profileitM Exception s!"collectRetainedDecls" (← getOptions) do
     let envAfter ← getEnv
@@ -106,13 +110,13 @@ private def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : Nam
           worklist := depName :: worklist
     return retained
 
-private structure TopoRetainedState where
+structure TopoRetainedState where
   visiting : NameSet := {}
   visited : NameSet := {}
   ordered : Array ConstantInfo := #[]
 
 --AI Slop that works, TODO review
-private partial def topoSortRetainedDeclsVisit
+partial def topoSortRetainedDeclsVisit
     (declMap : Std.HashMap Name ConstantInfo)
     (name : Name) : StateRefT TopoRetainedState TermElabM Unit := do
   let s ← get
@@ -133,7 +137,7 @@ private partial def topoSortRetainedDeclsVisit
       ordered := s.ordered.push cinfo }
 
 --AI Slop that works, TODO review
-private def topoSortRetainedDecls (declMap : Std.HashMap Name ConstantInfo) : TermElabM (Array ConstantInfo) := do
+def topoSortRetainedDecls (declMap : Std.HashMap Name ConstantInfo) : TermElabM (Array ConstantInfo) := do
   profileitM Exception s!"topoSortRetainedDecls" (← getOptions) do
     let (_, s) ← (do
       for name in declMap.keys do
@@ -152,7 +156,7 @@ def Lean.ConstantInfo.toDeclaration! : ConstantInfo → Declaration
   | .ctorInfo   _ => panic! "toDeclaration for ctorInfo not implemented"
   | .recInfo    _ => panic! "toDeclaration for recInfo not implemented"
 
-private def replayRetainedDecls (decls : Array ConstantInfo) : TermElabM Unit := do
+def replayRetainedDecls (decls : Array ConstantInfo) : TermElabM Unit := do
 profileitM Exception s!"replayRetainedDecls" (← getOptions) do
   for cinfo in decls do
     addDecl cinfo.toDeclaration!
@@ -174,7 +178,7 @@ instance : ToMessageData PreDefinition where
   toMessageData m :=
     m!"{m.declName} := {m.value} : {m.type}"
 @[modular_elab modular_mod_def, incremental]
-def elabModDef : ModularElab := fun stx =>
+meta def elabModDef : ModularElab := fun stx =>
   match stx with
   | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $tacs]? $termination_stx) => liftModularM do
     let modifiers ← elabModifiers mod

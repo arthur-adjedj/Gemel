@@ -1,7 +1,11 @@
-import Lean.Meta.Eqns
-import Lean.Elab.PreDefinition.Structural.Eqns
-import Lean.Elab.PreDefinition.WF.Eqns
-import Lean.Meta.RecExt
+module
+
+public import Lean.Meta.Eqns
+public import Lean.Elab.PreDefinition.Structural.Eqns
+public import Lean.Elab.PreDefinition.WF.Eqns
+public import Lean.Meta.RecExt
+
+@[expose] public section
 
 open Lean Meta Elab
 

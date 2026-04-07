@@ -1,5 +1,10 @@
-import LeanALaCarte.Elab
-import LeanALaCarte.ModularCommand
+module
+
+public import LeanALaCarte.Elab
+public import LeanALaCarte.ModularCommand
+
+@[expose] public section
+
 open Lean Meta Elab Command Term
 
 partial def modMapAux (map : ModularMap) (e : Expr): MetaM Expr := do
