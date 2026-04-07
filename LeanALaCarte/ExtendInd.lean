@@ -208,7 +208,7 @@ def mkAuxMappingIfValid (oldName newName : Name) : ModularM Unit := do
   let env ← getEnv
   if env.contains oldName && env.contains newName then
     let (name, ext) ← mkAuxMapping oldName newName
-    modify (·.insert name ext)
+    modifyMap (·.insert name ext)
 
 def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : ModularM Unit :=
   mkAuxName.forM fun mkAuxName =>
@@ -225,7 +225,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
                                      numArgs := 0
                                      numHoles := 0 }
   for indName in extendedInductive.indNames do
-    modify (·.insert indName indExt)
+    modifyMap (·.insert indName indExt)
     -- maps := (indName.eraseMacroScopes,indExt)::maps
     let indVal ← getConstInfoInduct indName
     for ctor in indVal.ctors do
@@ -234,7 +234,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
                                           levelParams := newIndParams
                                           numArgs := 0
                                           numHoles := 0 }
-      modify (·.insert ctor.eraseMacroScopes ctorExt)
+      modifyMap (·.insert ctor.eraseMacroScopes ctorExt)
     let oldRecName := mkRecName indName
     let oldRecVal ← getConstInfoRec oldRecName
     let oldNumArgs := oldRecVal.type.getNumHeadForalls
@@ -256,16 +256,16 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
       numArgs := oldNumArgs
       numHoles := numExtraMinors
     }
-    modify (·.insert oldRecName.eraseMacroScopes recExt)
+    modifyMap (·.insert oldRecName.eraseMacroScopes recExt)
     let mkAuxNames := [mkRecOnName, mkCasesOnName, mkBelowName, mkBRecOnName, mkSizeOfName]
     mkAuxMappings mkAuxNames indName newIndName
 
 @[modular_elab modular_inductive, incremental]
 meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
-  let extendedInd ← elabExtendedInd (← get) stx
+  let extendedInd ← elabExtendedInd (← getMap) stx
   let newIndName := extendedInd.newIndName
   let map ← getMap
-  trace[Modular.Elab] m!"modMap : {(← get).toList}"
+  trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
   let extendedInductive ← extendedInd.toInductiveView map
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
   addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)

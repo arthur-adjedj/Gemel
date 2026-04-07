@@ -79,7 +79,7 @@ deriving Inhabited
 
 def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader := do
   let cinfo ← getConstInfo oldName
-  let type ← modMap (← get) cinfo.type
+  let type ← modMap (← getMap) cinfo.type
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
@@ -221,7 +221,7 @@ meta def elabModDef : ModularElab := fun stx =>
             levelParams := levelParams
             numArgs := 0
             numHoles := 0}
-          modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
+          modifyMap fun m => m.insert oldFunName.eraseMacroScopes newMapEntry
           let mappedType ← modMap (← getMap) cinfo.type
           addDecl <| .axiomDecl
             {  name := newName

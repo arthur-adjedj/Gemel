@@ -151,6 +151,7 @@ set_option pp.match false in
 run_cmd liftTermElabM do
   let n? ← getEqDef? `Var.wk
   logInfo n?
+
 -- set_option trace.profiler true
 -- set_option trace.Elab.definition.body true
 modular
@@ -159,7 +160,6 @@ modular
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
   mod_def Term.wk extends Var.wk
-  -- termination_by structural R t => t
   where
     · intro _ _ _ a _ _ _
       subst_vars

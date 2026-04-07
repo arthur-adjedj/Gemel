@@ -29,15 +29,27 @@ instance : ToString ModularExtension where
   toString map := toString map.expr
 
 abbrev ModularMap := Std.HashMap Name ModularExtension
+
+structure MatchToExtend where
+  matchName : Name
+  mvar : MVarId
+  originalMatch : Expr
+
+structure ModularState where
+  map : ModularMap := {}
+  matchesToExtend : Array MatchToExtend := #[]
+
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
-export MonadModular (getMap)
+  modifyMap : (ModularMap → ModularMap) → m Unit
+export MonadModular (getMap modifyMap)
 
-instance [Monad m] : MonadModular (StateT ModularMap m) where
-  getMap m := pure (m,m)
+instance [Monad m] : MonadModular (StateT ModularState m) where
+  getMap m := pure (m.map,m)
+  modifyMap f m := pure ((),{m with map := f m.map})
 
-abbrev ModularM := StateT ModularMap TermElabM
-abbrev ModularElabM := StateT ModularMap CommandElabM
+abbrev ModularM := StateT ModularState TermElabM
+abbrev ModularElabM := StateT ModularState CommandElabM
 
 def liftModularM (k : ModularM α) : ModularElabM α := fun map => liftTermElabM (k map)
 
@@ -90,7 +102,7 @@ def withoutModularCommandIncrementality (cond : Bool) (act : ModularElabM α) : 
     return !cond
   }) act
 
-def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
+def elabModularCommandUsing (s : ModularState) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                =>
     withInfoTreeContext
       (mkInfoTree := fun trees =>
@@ -160,13 +172,12 @@ structure ModularBlockSnapshot extends Snapshot where
   /-- Input modular commands. -/
   cmds : Array Syntax
   /-- Command state and modular map after each corresponding modular command. -/
-  outputs : Array (Command.State × ModularMap)
+  outputs : Array (Command.State × ModularState)
 deriving TypeName
 
 open Language in
 instance : ToSnapshotTree ModularBlockSnapshot where
   toSnapshotTree s := SnapshotTree.mk s.toSnapshot #[]
-
 
 syntax (name := modular_block) "modular" manyIndent(modular_command) : command
 
@@ -181,8 +192,8 @@ def elabModularBlock : CommandElab := fun stx => do
       if snap.old?.isSome && oldSnap?.isNone then
         snap.old?.forM (·.val.cancelRec)
       let opts ← getOptions
-      let mut map : ModularMap := {}
-      let mut outputs : Array (Command.State × ModularMap) := #[]
+      let mut map : ModularState := {}
+      let mut outputs : Array (Command.State × ModularState) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
       let mut reusedPrefix := true
