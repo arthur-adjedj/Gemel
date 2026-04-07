@@ -45,33 +45,30 @@ def Nat.add' (n : Nat) : Nat → Nat
   | .zero => n
   | .succ k => (Nat.add' n k).succ
 
-set_option pp.match false in
-#check Nat.add.eq_def
 
 modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
-  set_option trace.Modular.Elab true in
-  set_option trace.Modular.Subst true in
-  set_option trace.Elab.definition.structural true in
-  mod_def Natt.add extends Nat.add' where
+   def Natt.add : Natt → Natt → Natt := fun _ x => match x with
+      | .zero
+      | .succ _
+      | .succ' _ => .zero
+
+  mod_def Natt.add' extends Nat.add' where
     expose_names
     exact match x with
       | .zero => n
-      | .succ k => (Natt.add n k).succ
-      | .succ' k => (Natt.add n k).succ'
+      | .succ k => (Natt.add' n k).succ
+      | .succ' k => (Natt.add' n k).succ'
+  -- termination_by _ x => x
 
 modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
   mod_def Vecc.append extends Vec.append where
-    intro n a v _ _ b
-    subst_vars
-    apply Vecc.cons' a
-    apply b ⟨n,v⟩
-    decreasing_tactic
+    sorry
 
 /--
 info: ModDefTests.Vecc.append {α : Type} {n k : Nat} (v₁ : Vecc α n) (v₂ : Vecc α k) : Vecc α (k.add ⟨n, v₁⟩.1)

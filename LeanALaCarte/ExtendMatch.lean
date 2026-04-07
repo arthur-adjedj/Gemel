@@ -53,8 +53,18 @@ def MatcherBundle.modMap (map : ModularMap) (m : MatcherBundle) : MetaM MatcherB
   let rhss ← rhss.mapM (_root_.modMap map)
   return {discrs, matchType, lhss, rhss}
 
-def MatcherBundle.mkMatcher (m : MatcherBundle) : TermElabM Expr := do
+def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
   let {discrs, matchType, lhss, rhss} := m
+  let (discrs, matchType, altLHSS, rhss) ← commitIfDidNotPostpone do
+    let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
+    trace[Elab.match] "matchType: {matchType}"
+    let alts : Array (_ × _) := sorry --TODO remove once `elabMatchAltViews` is actually usable`
+    -- let (discrs, matchType, alts) ← elabMatchAltViews false discrs matchType matchAlts --TODO allow generalisations ?
+    synthesizeSyntheticMVarsUsingDefault
+    let rhss := alts.map Prod.snd
+    let matchType ← instantiateMVars matchType
+    let altLHSS ← instantiateAltLHSs (alts.map Prod.fst)
+    return (discrs, matchType, altLHSS, rhss)
   let numDiscrs := discrs.size
   let matcherName ← mkAuxName `match
   let matcherResult ← Lean.Elab.Term.mkMatcher { matcherName, matchType, lhss, discrInfos := discrs.map Prod.snd}
@@ -66,12 +76,3 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) : TermElabM Expr := do
   let r := mkAppN r rhss
   trace[Elab.match] "result: {r}"
   return r
-
-/- TODO reuse match delaborator to gather the right informations about a previous match, namely:
-  - take and elaborate the new branches given by the users
-  - add those to the matcher infos
-  - generate the appropriate matcher application
-Issues:
-  - What if the "new" matcher needs to be refined more than the original, how to do that ?
-  - How to adapt matchers with horizontal extensions ?
--/

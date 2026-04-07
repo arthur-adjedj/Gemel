@@ -48,7 +48,8 @@ partial def modMapAux (map : ModularMap) (e : Expr): MetaM Expr := do
         if map.contains hd_name then
           let mvar_ty ← withLCtx' mvarLCtx (inferType e >>= modMapAux map)
           trace[Modular.Subst] "new matcher type : {mvar_ty}"
-          let mvar ← mkFreshExprMVar mvar_ty .syntheticOpaque
+          let mvar ← withLCtx' mvarLCtx <| mkFreshExprMVar mvar_ty .syntheticOpaque
+          trace[Modular.Subst] "matcher mvar : {mvar}"
           return mvar
       fallback ()
   else

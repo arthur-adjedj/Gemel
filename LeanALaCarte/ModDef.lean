@@ -2,6 +2,7 @@ import Lean.Parser.Command
 import Lean.Parser.Tactic
 import Lean.Elab.MutualDef
 import Lean.Meta.Tactic.Try
+import Lean.Elab.Term.TermElabM
 import LeanALaCarte.ModMap
 import LeanALaCarte.Elab
 import LeanALaCarte.CollectDelayedAssignementsWithArgs
@@ -77,7 +78,6 @@ def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader
   let type ← modMap (← get) cinfo.type
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
-
 
 private def collectExprConstants (exprs : Array Expr) : NameSet :=
   exprs.foldl (init := {}) fun names e => e.foldConsts names fun c cs => cs.insert c
@@ -207,47 +207,47 @@ def elabModDef : ModularElab := fun stx =>
 
     -- What follows from here is a horrible mess and should definitely be reworked to be more principled in the very near future..
     for {cinfo, newName, isAux, ..} in mapHeaders do
-      trace[Modular.Elab] "elaborating {newName}"
-      -- If a function isn't an auxiliary, it might be recursive. As such, the shape of the function should be known (i.e we dont' have holes in it for now), and we need the mapping to already exist before translating the term, since the function might itself appear in its `eq_def` body.
-      if !isAux then
-        -- TODO put behind a function
-        let levelParams := cinfo.levelParams
-        let newMapEntry := {
-          expr := mkConst newName (levelParams.map .param)
-          levelParams := levelParams
-          numArgs := 0
-          numHoles := 0}
-        modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
-        let mappedType ← modMap (← getMap) cinfo.type
-        addDecl <| .axiomDecl
-          {  name := newName
-             levelParams := cinfo.levelParams
-             type := mappedType
-             isUnsafe := false }
-      let mut mappedValue ← modMapValueOrEqDef cinfo isAux
-      if newName.isMatcher then
-        trace[Modular.Elab] "matcher detected {newName}"
-        mappedValue ← lambdaTelescope mappedValue fun xs e => do
-          unless xs.all (! ·.hasMVar) do
-            throwError "TODO instantiate vars appropriately to avoid this issue"
-          withReplaceMVarsWithFVars e fun e ys => do
-            let e ← mkLambdaFVars ys e
-            mkLambdaFVars xs e
-      else
+        trace[Modular.Elab] "elaborating {newName}"
+        -- If a function isn't an auxiliary, it might be recursive. As such, the shape of the function should be known (i.e we dont' have holes in it for now), and we need the mapping to already exist before translating the term, since the function might itself appear in its `eq_def` body.
+        if !isAux then
+          -- TODO put behind a function
+          let levelParams := cinfo.levelParams
+          let newMapEntry := {
+            expr := mkConst newName (levelParams.map .param)
+            levelParams := levelParams
+            numArgs := 0
+            numHoles := 0}
+          modify fun m => (m.insert oldFunName.eraseMacroScopes newMapEntry)
+          let mappedType ← modMap (← getMap) cinfo.type
+          addDecl <| .axiomDecl
+            {  name := newName
+               levelParams := cinfo.levelParams
+               type := mappedType
+               isUnsafe := false }
+        let mut mappedValue ← modMapValueOrEqDef cinfo isAux
+        -- if newName.isMatcher then
+          -- trace[Modular.Elab] "matcher detected {newName}"
+          -- mappedValue ← lambdaTelescope mappedValue fun xs e => do
+            -- unless xs.all (! ·.hasMVar) do
+              -- throwError "TODO instantiate vars appropriately to avoid this issue"
+            -- withReplaceMVarsWithFVars e fun e ys => do
+              -- let e ← mkLambdaFVars ys e
+              -- mkLambdaFVars xs e
+        -- else
         let newMvars ← getMVarsNoDelayed mappedValue
         mvars := newMvars.toList ++ mvars
-      mappedValues := mappedValues.push mappedValue
-      let mappedType ← inferType mappedValue
-      if mappedType.hasMVar then
-        throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
-      mappedTypes := mappedTypes.push mappedType
-      if isAux then
-        addDecl <| .axiomDecl
-          { name := newName
-            levelParams := cinfo.levelParams
-            type := mappedType
-            isUnsafe := false }
-        addAuxMapping cinfo.name newName
+        mappedValues := mappedValues.push mappedValue
+        let mappedType ← inferType mappedValue
+        if mappedType.hasMVar then
+          throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
+        mappedTypes := mappedTypes.push mappedType
+        if isAux then
+          addDecl <| .axiomDecl
+            { name := newName
+              levelParams := cinfo.levelParams
+              type := mappedType
+              isUnsafe := false }
+          addAuxMapping cinfo.name newName
 
     trace[Modular.Elab] "Mapped values : {mappedValues}"
     trace[Modular.Elab] "Mvars : {mvars.map Expr.mvar}"
@@ -257,7 +257,7 @@ def elabModDef : ModularElab := fun stx =>
     else
       let some tac := tacs
         | throwError "Missing `where` block to solve the missing holes"
-      solveGoalsWithTactic tac mvars
+      Term.withDeclName newFunName do solveGoalsWithTactic tac mvars
     trace[Modular.Elab] "Tactics elaborated"
     mappedValues ← mappedValues.mapM instantiateMVars
     mappedValues.forM fun e => Meta.check e
