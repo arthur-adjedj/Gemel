@@ -30,7 +30,7 @@ structure ExtendedInd where
   indNames : Array Name
   addedConstrs : Array Constructor
 
-def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM InductiveType := do
+def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
   let indVals ← e.indNames.mapM getConstInfoInduct
   let inheritedCtors ← indVals.foldlM (init := []) fun acc indVal => do
     return (← indVal.ctors.mapM getConstInfoCtor) ++ acc
@@ -41,29 +41,30 @@ def ExtendedInd.toInductiveView (map : ModularMap) (e : ExtendedInd) : MetaM Ind
       numArgs := 0
       numHoles := 0
     }
-    let tempMap := e.indNames.foldl (init := map) fun acc indName =>
+    let tempMap := e.indNames.foldl (init := ← getMap) fun acc indName =>
       acc.insert indName.eraseMacroScopes tempIndExt
     let tempMap := tempMap.insert e.newIndName.eraseMacroScopes tempIndExt
-    let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
-    let inheritedCtors ← inheritedCtors.mapM fun ctor => do
-      let ctorType ← modMap tempMap ctor.type
-      unless !ctorType.hasMVar do
-        -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
-        throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
-      let ctorType := ctorType.replace fun
-        | .fvar fvarId =>
-          if fvarId == newIndFVar.fvarId! then some newIndConst else none
-        | _ => none
-      return ({
-        name := ctor.name.replacePrefix ctor.induct e.newIndName
-        type := ctorType
-      } : Constructor)
-    let addedCtors := e.addedConstrs
-    return {
-      name := e.newIndName
-      type := e.type
-      ctors := inheritedCtors ++ addedCtors.toList
-    }
+    withSetMap tempMap do
+      let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
+      let inheritedCtors ← inheritedCtors.mapM fun ctor => do
+        let ctorType ← modMap ctor.type
+        unless !ctorType.hasMVar do
+          -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+          throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
+        let ctorType := ctorType.replace fun
+          | .fvar fvarId =>
+            if fvarId == newIndFVar.fvarId! then some newIndConst else none
+          | _ => none
+        return ({
+          name := ctor.name.replacePrefix ctor.induct e.newIndName
+          type := ctorType
+        } : Constructor)
+      let addedCtors := e.addedConstrs
+      return {
+        name := e.newIndName
+        type := e.type
+        ctors := inheritedCtors ++ addedCtors.toList
+      }
 
 /- TODO
   - Make syntax for inductive extension
@@ -186,7 +187,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
         unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
           throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
     let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
-    let type ← modMap map type0
+    let (type,_) ← modMap type0 ⟨map,#[]⟩
     unless !type.hasMVar do
     -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
       throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
@@ -264,9 +265,8 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
 meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let extendedInd ← elabExtendedInd (← getMap) stx
   let newIndName := extendedInd.newIndName
-  let map ← getMap
   trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
-  let extendedInductive ← extendedInd.toInductiveView map
+  let extendedInductive ← extendedInd.toInductiveView
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
   addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
   mkRecOn newIndName

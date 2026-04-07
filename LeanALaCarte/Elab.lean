@@ -42,11 +42,29 @@ structure ModularState where
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
   modifyMap : (ModularMap → ModularMap) → m Unit
-export MonadModular (getMap modifyMap)
+  addMatchExtension : MatchToExtend → m Unit
+export MonadModular (getMap modifyMap addMatchExtension)
+
+def setMap [Monad m] [MonadModular m] (map: ModularMap) : m Unit := modifyMap fun _ => map
+
+def withModifyMap [Monad m] [MonadModular m] (f : ModularMap → ModularMap) (k : m α) : m α := do
+  let oldMap ← getMap
+  modifyMap f
+  let res ← k
+  setMap oldMap
+  return res
+
+def withSetMap [Monad m] [MonadModular m] (map : ModularMap) (k : m α) : m α := do
+  let oldMap ← getMap
+  setMap map
+  let res ← k
+  setMap oldMap
+  return res
 
 instance [Monad m] : MonadModular (StateT ModularState m) where
   getMap m := pure (m.map,m)
-  modifyMap f m := pure ((),{m with map := f m.map})
+  modifyMap f := modify fun m =>  {m with map := f m.map}
+  addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}
 
 abbrev ModularM := StateT ModularState TermElabM
 abbrev ModularElabM := StateT ModularState CommandElabM

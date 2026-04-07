@@ -30,12 +30,11 @@ def getEqDef? (n : Name) : MetaM (Option Expr) := do
     mkLambdaFVars xs rhs
 
 def modMapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
-  let map ← getMap
-  let fallback _ := modMap map cinfo.value!
+  let fallback _ := modMap cinfo.value!
   if isAux then fallback ()
   else
     let some value ← getEqDef? cinfo.name | fallback ()
-    modMap map value
+    modMap value
 
 def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit := do
   unless goals.isEmpty do
@@ -79,7 +78,7 @@ deriving Inhabited
 
 def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader := do
   let cinfo ← getConstInfo oldName
-  let type ← modMap (← getMap) cinfo.type
+  let type ← modMap cinfo.type
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
@@ -222,7 +221,7 @@ meta def elabModDef : ModularElab := fun stx =>
             numArgs := 0
             numHoles := 0}
           modifyMap fun m => m.insert oldFunName.eraseMacroScopes newMapEntry
-          let mappedType ← modMap (← getMap) cinfo.type
+          let mappedType ← modMap cinfo.type
           addDecl <| .axiomDecl
             {  name := newName
                levelParams := cinfo.levelParams
