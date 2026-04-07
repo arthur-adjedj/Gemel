@@ -4,7 +4,3 @@ defaultTargets = ["LeanALaCarte"]
 
 [[lean_lib]]
 name = "LeanALaCarte"
-
-[[require]]
-name = "Qq"
-scope = "leanprover-community"
