@@ -4,7 +4,9 @@ public import LeanALaCarte.ModDef
 public import LeanALaCarte.ExtendInd
 public import LeanALaCarte.CheckTranslation
 public import LeanALaCarte.ModularCommand
+public import Lean
 
+open Lean Elab Command Meta
 public section
 
 namespace ModDefTests
@@ -45,6 +47,12 @@ def Vec.append (v₁ : Vec α n) (v₂ : Vec α k) : Vec α (k.add n) :=
   | cons (n := n) a v₁ => cons a (v₁.append v₂)
 termination_by sizeOf v₁
 
+set_option trace.Elab.definition.structural true in
+def Nat.add : Nat → Nat → Nat
+  | a, Nat.zero   => a
+  | a, Nat.succ b => Nat.succ (Nat.add a b)
+termination_by structural _ x => x
+
 def Nat.add' (n : Nat) : Nat → Nat := match n with
   | .zero => id
   | .succ n => fun k => (Nat.add' n k).succ
@@ -58,6 +66,11 @@ modular
       | .succ _
       | .succ' _ => .zero
 
+    --works at last !!!!!!
+    mod_def Natt.add'' extends Nat.add' where
+    foo with
+      | Natt.succ' n => fun k => (Natt.add'' n k).succ'
+
   -- set_option trace.Modular.Elab true in
   -- set_option trace.Modular.Match true in
   -- set_option pp.rawOnError true in
@@ -65,9 +78,15 @@ modular
   -- set_option pp.match false in
   -- set_option trace.Meta.Match.debug true in
   -- set_option trace.Meta.Match.match true in
-  mod_def Natt.add' extends Nat.add' where
+  set_option trace.Elab.definition.structural true in
+  mod_def Natt.add' extends Nat.add where
     foo with
-      | Natt.succ' n => fun k => (Natt.add' n k).succ'
+      | n, Natt.succ' k => (Natt.add' n k).succ'
+  termination_by structural n x => x
+
+-- #check Natt.add'.match_1
+run_cmd Command.liftTermElabM do --This should be `some ...`, This causes the failure above
+  logInfo m!"{← getMatcherInfo? ``Natt.add'.match_1}"
 
     -- expose_names
     -- exact match x with
