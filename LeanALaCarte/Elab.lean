@@ -68,7 +68,7 @@ instance [Monad m] : MonadModular (StateT ModularState m) where
   getMatchExtensions s := pure (s.matchesToExtend,s)
 
 abbrev ModularM := StateT ModularState TermElabM
-abbrev ModularElabM := StateT ModularState CommandElabM
+abbrev ModularElabM := StateT ModularState CommandElabM -- TODO only `ModularM` should carry the match extensions machinery, as it should be reset between each command.
 
 def liftModularM (k : ModularM α) : ModularElabM α := fun map => liftTermElabM (k map)
 
