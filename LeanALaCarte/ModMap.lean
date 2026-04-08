@@ -31,10 +31,6 @@ partial def modMapAux (e : Expr): ModularM Expr := do
       trace[Modular.Subst] m!"mvars instantiated : {res}"
       let res := mkAppN res newArgs[ext.numArgs:]
       trace[Modular.Subst] m!"with extra args : {res}"
-      -- Let's just `check` the entire translated expression in `modmap` instead. Hopefully it's okay..
-      -- if ext.numArgs != 0 then
-        -- check res  --typecheck the result, which should give a sensible type to each synthetic mvar introduced in the term, and throw a type-error if the generated term is ill-formed.
-        -- TODO For (much) better performance in the future, rather than `check` every translation that introduces an mvar, it would make a lot more sense to store the information necessary to infer the type of those mvars in the `ModularExtension`s, I just haven't thought hard enough about how to do that well for now
       let res ← instantiateMVars res
       return res
     let fallback _ : ModularM Expr := do

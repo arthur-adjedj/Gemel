@@ -2,6 +2,7 @@ module
 
 public import Lean.Parser.Command
 public import Lean.Parser.Tactic
+public import Lean.Parser.Term
 public import Lean.Elab.MutualDef
 public import Lean.Meta.Tactic.Try
 public import Lean.Elab.Term.TermElabM
@@ -14,7 +15,7 @@ public meta import LeanALaCarte.UnfoldEqns
 
 @[expose] public meta section
 
-open Lean Parser Elab Meta Command
+open Lean Parser Elab Meta
 
 def Lean.ConstantInfo.kind! (cinfo : ConstantInfo) : DefKind := match cinfo with
   | .defnInfo _ => .def
@@ -48,26 +49,6 @@ def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit :
     -- complain if any goals remain
     unless remainingGoals.isEmpty do
       Term.reportUnsolvedGoals remainingGoals
-
-def withReplaceMVarsWithFVars [Inhabited α] (e: Expr) (k : Expr → Array Expr → MetaM α) : MetaM α := do
-  let delayedMvarsWithArgs ← e.collectDelayedAssignmentsWithArgs
-  let mvarsWithAppTy ← delayedMvarsWithArgs.mapM fun e => do
-    let mvar := e.getAppFn.mvarId!
-    mvar.withContext do
-      let mvarTy ← mvar.getType
-      let args := e.getAppArgs
-      forallBoundedTelescope mvarTy args.size fun xs ty => return ty.replaceFVars xs args
-  trace[Modular.Elab] "delayedMvarsWithArgs : {delayedMvarsWithArgs}"
-  trace[Modular.Elab] "mvarsWithAppTy : {mvarsWithAppTy}"
-  let decls ← mvarsWithAppTy.mapM fun ty => do return (← mkFreshId,ty)
-  withLocalDeclsDND decls fun xs => do
-  trace[Modular.Elab] "new fvars : {xs}"
-  let e := e.replace fun t =>
-    -- TODO once the TODO in `collectDelayedAssignmentsWithArgs` is done, use `ptrEq` rather than `==` here
-    delayedMvarsWithArgs.findIdx? (t == ·) |>.map fun idx => xs[idx]!
-  -- trace[Modular.Elab] "new term : {e}"
-  Meta.check e
-  k e xs
 
 structure MappedHeader where
   cinfo : ConstantInfo
@@ -171,15 +152,20 @@ Once that is all done, translate that syntax to a `DefView` and elaborate it lik
 Actually, `DefView` contain the value as a syntax, not as an Expr, this is not ideal because it implies needing to first delaborate the translated term before re-elaborating it.. Let's try to translate things directly to `PreDef`s instead, this will be a bit of a PITA...
 -/
 
+declare_syntax_cat modular_where_match
+def modular_where_match_clause := leading_parser:leadPrec
+  Term.ident >> many Term.ident >> checkColGt >> Term.matchAlts
+
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" ident "extends" ident (ppDedent(ppLine) "where" ppDedent(ppLine) tacticSeqIndentGt)?  Termination.suffix : modular_command
+  declModifiers "mod_def" ident "extends" ident ppDedent(ppLine) ("where" ppDedent(ppLine) modular_where_match)? ("finally" ppDedent(ppLine) tacticSeqIndentGt)?  Termination.suffix : modular_command
+
 instance : ToMessageData PreDefinition where
   toMessageData m :=
     m!"{m.declName} := {m.value} : {m.type}"
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $tacs]? $termination_stx) => liftModularM do
+  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $mod]? $[finally $tacs]? $termination_stx) => liftModularM do
     let modifiers ← elabModifiers mod
     let modifiers := {modifiers with computeKind := .noncomputable} -- For now, generated expressions contain `.brecOns` often, which the lean compiler doesn't currently handle.
     let termination_hint ← elabTerminationHints termination_stx
@@ -222,21 +208,11 @@ meta def elabModDef : ModularElab := fun stx =>
             numHoles := 0}
           modifyMap fun m => m.insert oldFunName.eraseMacroScopes newMapEntry
           let mappedType ← modMap cinfo.type
-          addDecl <| .axiomDecl
-            {  name := newName
-               levelParams := cinfo.levelParams
-               type := mappedType
-               isUnsafe := false }
+          addDecl <| .axiomDecl { name := newName
+                                  levelParams := cinfo.levelParams
+                                  type := mappedType
+                                  isUnsafe := false }
         let mut mappedValue ← modMapValueOrEqDef cinfo isAux
-        -- if newName.isMatcher then
-          -- trace[Modular.Elab] "matcher detected {newName}"
-          -- mappedValue ← lambdaTelescope mappedValue fun xs e => do
-            -- unless xs.all (! ·.hasMVar) do
-              -- throwError "TODO instantiate vars appropriately to avoid this issue"
-            -- withReplaceMVarsWithFVars e fun e ys => do
-              -- let e ← mkLambdaFVars ys e
-              -- mkLambdaFVars xs e
-        -- else
         let newMvars ← getMVarsNoDelayed mappedValue
         mvars := newMvars.toList ++ mvars
         mappedValues := mappedValues.push mappedValue
@@ -309,9 +285,3 @@ instance : ToString MatcherInfo where
   numDiscrs : {numDiscrs},
   altInfos : {altInfos},
   uElimPos? : {uElimPos?} ⦄"
-
-set_option pp.match true
-#print Nat.add.eq_def
-
-run_cmd liftTermElabM do
-  logInfo m!"{(← getMatcherInfo? `Nat.add.match_1) |>.get!}"

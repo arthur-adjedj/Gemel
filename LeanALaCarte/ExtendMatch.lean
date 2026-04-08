@@ -3,7 +3,7 @@ module
 public import Lean
 public import LeanALaCarte.ModMap
 import all Lean.Elab.Match
-@[expose] section
+@[expose] meta section
 
 open Lean Elab Term Meta Match
 
@@ -39,22 +39,22 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) :=
              patterns := pats.toList }
   return some {discrs, matchType, lhss := lhss.toList, rhss}
 
-partial def Lean.Meta.Match.Pattern.modMap (map : ModularMap) : Pattern → MetaM Pattern
-  | Pattern.inaccessible e      => return Pattern.inaccessible (← _root_.modMap map e)
-  | Pattern.val e               => return Pattern.val (← _root_.modMap map e)
+partial def Lean.Meta.Match.Pattern.modMap : Pattern → ModularM Pattern
+  | Pattern.inaccessible e      => return Pattern.inaccessible (← _root_.modMap e)
+  | Pattern.val e               => return Pattern.val (← _root_.modMap e)
   | Pattern.ctor n us ps fields => do
     -- TODO sanitize modmap extension API to make sure constructors are never extended by something other than a constructor
-    let some {expr := Expr.const n _,..} := map[n]? | unreachable! --TODO better fallback
-    return Pattern.ctor n us (← ps.mapM (_root_.modMap map)) (← fields.mapM (·.modMap map))
-  | Pattern.as x p h            => return Pattern.as x (← p.modMap map) h
-  | Pattern.arrayLit t xs       => return Pattern.arrayLit (← _root_.modMap map t) (← xs.mapM (·.modMap map))
+    let some {expr := Expr.const k _,..} := (← getMap)[n]? | unreachable! --TODO better fallback
+    return Pattern.ctor k us (← ps.mapM _root_.modMap) (← fields.mapM modMap)
+  | Pattern.as x p h            => return Pattern.as x (← p.modMap) h
+  | Pattern.arrayLit t xs       => return Pattern.arrayLit (← _root_.modMap t) (← xs.mapM modMap)
   | p                   => return p
 
-def MatcherBundle.modMap (map : ModularMap) (m : MatcherBundle) : MetaM MatcherBundle := do
+def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
   let {discrs, matchType, lhss, rhss} := m
-  let discrs ← discrs.mapM fun ⟨expr, h?⟩ => do return ⟨← _root_.modMap map expr, h?⟩
-  let matchType ← _root_.modMap map matchType
-  let rhss ← rhss.mapM (_root_.modMap map)
+  let discrs ← discrs.mapM fun ⟨expr, h?⟩ => do return ⟨← _root_.modMap expr, h?⟩
+  let matchType ← _root_.modMap matchType
+  let rhss ← rhss.mapM _root_.modMap
   return {discrs, matchType, lhss, rhss}
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
