@@ -1,8 +1,7 @@
 module
 
-public import LeanALaCarte.Util
-public meta import Lean.Meta.Check
-public meta import Lean.Elab
+public import Lean.Elab.Command
+public meta import Lean.Elab.Command
 
 @[expose] public section
 
@@ -43,7 +42,8 @@ class MonadModular (m) [Monad m] where
   getMap : m ModularMap
   modifyMap : (ModularMap → ModularMap) → m Unit
   addMatchExtension : MatchToExtend → m Unit
-export MonadModular (getMap modifyMap addMatchExtension)
+  getMatchExtensions : m (Array MatchToExtend)
+export MonadModular (getMap modifyMap addMatchExtension getMatchExtensions)
 
 def setMap [Monad m] [MonadModular m] (map: ModularMap) : m Unit := modifyMap fun _ => map
 
@@ -65,6 +65,7 @@ instance [Monad m] : MonadModular (StateT ModularState m) where
   getMap m := pure (m.map,m)
   modifyMap f := modify fun m =>  {m with map := f m.map}
   addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}
+  getMatchExtensions s := pure (s.matchesToExtend,s)
 
 abbrev ModularM := StateT ModularState TermElabM
 abbrev ModularElabM := StateT ModularState CommandElabM

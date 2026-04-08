@@ -2,7 +2,7 @@ module
 
 public meta import LeanALaCarte.Elab
 public meta import Lean.Elab.GuardMsgs
-public meta import Lean.Elab.SetOption
+public import LeanALaCarte.Elab
 
 @[expose] public meta section
 

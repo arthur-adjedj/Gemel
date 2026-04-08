@@ -1,6 +1,7 @@
 module
 
-public import Lean
+public import Lean.Meta.Basic
+public import Lean.Util.ForEachExprWhere
 
 @[expose] public section
 

@@ -1,6 +1,6 @@
 module
 
-public meta import LeanALaCarte.ModMap
+public import LeanALaCarte.ModMap
 
 @[expose] public meta section
 

@@ -1,6 +1,7 @@
 module
 
 public meta import LeanALaCarte.Elab
+public import LeanALaCarte.Elab
 
 @[expose] public meta section
 

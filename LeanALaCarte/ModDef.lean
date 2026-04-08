@@ -1,17 +1,10 @@
 module
 
-public import Lean.Parser.Command
-public import Lean.Parser.Tactic
-public import Lean.Parser.Term
-public import Lean.Elab.MutualDef
-public import Lean.Meta.Tactic.Try
-public import Lean.Elab.Term.TermElabM
-public meta import LeanALaCarte.ModMap
-public meta import LeanALaCarte.Elab
-public meta import LeanALaCarte.CollectDelayedAssignementsWithArgs
-public meta import LeanALaCarte.AuxMapping
 public meta import LeanALaCarte.CollectAuxDefs
-public meta import LeanALaCarte.UnfoldEqns
+public meta import Lean.Elab.PreDefinition.Main
+public meta import Lean.Meta.Tactic.Try.Collect
+public import LeanALaCarte.AuxMapping
+public import LeanALaCarte.ModMap
 
 @[expose] public meta section
 

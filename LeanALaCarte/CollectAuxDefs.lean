@@ -1,9 +1,6 @@
 module
 
-public import Std.Data.HashMap.Basic
-public import Std.Data.HashSet.Basic
 public import Lean.Meta.Basic
-public import Lean.Elab
 
 @[expose] public section
 /-! Collect all auxiliary definitions of a given definition, return them in a topological sort.-/
@@ -57,6 +54,7 @@ where
         visit depsOnName
     modify fun (set,res) => (set.erase n, n::res)
 
+@[deprecated "TODO do NOT rely on this function in the future. Since we use `.eq_def`s to elaborate functions now, there can indeed cycles in the declarations (e.g with mutual definitions), and this does not handle such cycles." (since := "recently") ]
 def auxDefs (n : Name) (root := n) : MetaM (List Name) := do
   let (_,s) ← collectAuxDefs root n |>.run {}
   return topoAuxDefs s

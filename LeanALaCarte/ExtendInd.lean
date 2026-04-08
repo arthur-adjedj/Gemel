@@ -1,11 +1,12 @@
 module
 
-public meta import LeanALaCarte.Elab
-public meta import LeanALaCarte.ModMap
-public import Lean.Parser.Command
 public meta import Lean.Meta.Constructions.CtorIdx
 public meta import Lean.Meta.Constructions.CtorElim
-public meta import LeanALaCarte.AuxMapping
+public meta import Lean.Elab.MutualInductive
+public meta import Lean.Meta.IndPredBelow
+public meta import Lean.Meta.Injective
+public import LeanALaCarte.AuxMapping
+public import LeanALaCarte.ModMap
 
 @[expose] public meta section
 
