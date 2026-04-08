@@ -7,7 +7,7 @@ public import LeanALaCarte.ModDef
 public import Lean.Meta.Check
 public import Qq
 
-@[expose] public section
+public section
 
 open Qq
 open Lean Meta Elab Command Term

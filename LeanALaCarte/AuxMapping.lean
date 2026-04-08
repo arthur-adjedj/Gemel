@@ -3,7 +3,7 @@ module
 public meta import LeanALaCarte.Elab
 public import LeanALaCarte.Elab
 
-@[expose] public meta section
+public meta section
 
 open Lean Parser Elab Meta Command
 

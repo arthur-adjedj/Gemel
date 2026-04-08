@@ -8,7 +8,7 @@ public meta import Lean.Meta.Injective
 public import LeanALaCarte.AuxMapping
 public import LeanALaCarte.ModMap
 
-@[expose] public meta section
+public meta section
 
 open Lean Parser Elab Meta Command
 

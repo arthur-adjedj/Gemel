@@ -4,7 +4,7 @@ public meta import LeanALaCarte.Elab
 public meta import Lean.Elab.GuardMsgs
 public import LeanALaCarte.Elab
 
-@[expose] public meta section
+public meta section
 
 open Lean Elab Command
 open Lean.Elab.Tactic.GuardMsgs

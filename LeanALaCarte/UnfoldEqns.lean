@@ -3,7 +3,7 @@ module
 public import Lean.Elab.PreDefinition.Structural.Eqns
 public import Lean.Elab.PreDefinition.WF.Eqns
 
-@[expose] public section
+public section
 
 open Lean Meta Elab
 

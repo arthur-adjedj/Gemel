@@ -4,7 +4,7 @@ public import LeanALaCarte.ModDef
 public import LeanALaCarte.ExtendInd
 public import LeanALaCarte.CheckTranslation
 
-@[expose] public section
+public section
 
 namespace ModDefTests
 

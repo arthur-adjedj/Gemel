@@ -2,7 +2,7 @@ module
 
 public import LeanALaCarte.ModMap
 
-@[expose] public meta section
+public meta section
 
 open Lean Elab Command Term
 

@@ -9,7 +9,7 @@ prelude
 public import Lean.Util.PtrSet
 public import Lean.Declaration
 
-@[expose] public section
+public section
 
 namespace Lean
 namespace Expr

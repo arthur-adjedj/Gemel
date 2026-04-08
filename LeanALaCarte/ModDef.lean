@@ -1,12 +1,22 @@
 module
 
-public meta import LeanALaCarte.CollectAuxDefs
+public import Lean.Parser.Command
+public import Lean.Parser.Tactic
+public import Lean.Parser.Term
+public import Lean.Elab.MutualDef
+public meta import Lean.Meta.Tactic.Try
 public meta import Lean.Elab.PreDefinition.Main
-public meta import Lean.Meta.Tactic.Try.Collect
-public import LeanALaCarte.AuxMapping
-public import LeanALaCarte.ModMap
+public import Lean.Elab.Term.TermElabM
+public import Lean.Elab.Match
+public meta import LeanALaCarte.ModMap
+public meta import LeanALaCarte.Elab
+public meta import LeanALaCarte.CollectDelayedAssignementsWithArgs
+public meta import LeanALaCarte.AuxMapping
+public meta import LeanALaCarte.CollectAuxDefs
+public meta import LeanALaCarte.UnfoldEqns
+public meta import LeanALaCarte.ExtendMatch
 
-@[expose] public meta section
+public meta section
 
 open Lean Parser Elab Meta
 

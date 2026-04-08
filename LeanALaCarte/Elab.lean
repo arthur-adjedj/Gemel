@@ -3,7 +3,7 @@ module
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
 
-@[expose] public section
+public section
 
 open Lean Meta Elab Command Term
 
@@ -98,6 +98,7 @@ instance [Monad m] [MonadRecDepth  m] : MonadRecDepth  (StateT ρ m) where
   getMaxRecDepth p := do
     let n ← MonadRecDepth.getMaxRecDepth
     return (n,p)
+
 
 @[expose] def ModularElab := Syntax → ModularElabM Unit
 

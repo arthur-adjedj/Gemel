@@ -3,7 +3,8 @@ module
 public import Lean
 public import LeanALaCarte.ModMap
 import all Lean.Elab.Match
-@[expose] meta section
+
+public meta section
 
 open Lean Elab Term Meta Match
 

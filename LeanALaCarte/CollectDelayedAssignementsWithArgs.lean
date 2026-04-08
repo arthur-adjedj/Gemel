@@ -3,7 +3,7 @@ module
 public import Lean.Meta.Basic
 public import Lean.Util.ForEachExprWhere
 
-@[expose] public section
+public section
 
 open Lean Meta
 

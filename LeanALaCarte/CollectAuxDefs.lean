@@ -2,7 +2,7 @@ module
 
 public import Lean.Meta.Basic
 
-@[expose] public section
+public section
 /-! Collect all auxiliary definitions of a given definition, return them in a topological sort.-/
 
 open Lean Meta Elab

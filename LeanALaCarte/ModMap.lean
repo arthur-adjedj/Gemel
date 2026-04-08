@@ -4,7 +4,7 @@ public import LeanALaCarte.Elab
 public meta import LeanALaCarte.Elab
 public meta import LeanALaCarte.Util
 
-@[expose] public meta section
+public meta section
 
 open Lean Meta Elab Command Term
 
