@@ -250,5 +250,6 @@ def elabModularBlock : CommandElab := fun stx => do
 initialize
   registerTraceClass `Modular.Elab
   registerTraceClass `Modular.Subst
+  registerTraceClass `Modular.Match
 
 end

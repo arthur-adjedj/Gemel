@@ -1,4 +1,4 @@
 module
 
-public import LeanALaCarte.Test.InductiveExtend
-public import LeanALaCarte.Test.ModDef
+-- public import LeanALaCarte.Test.InductiveExtend
+-- public import LeanALaCarte.Test.ModDef
