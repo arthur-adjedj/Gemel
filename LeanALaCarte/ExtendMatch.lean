@@ -67,11 +67,8 @@ def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
     --TODO put behind a function
     let fvarDecls ← fvarDecls.foldlM (init := []) fun prevFvarDecls fvar => do
       withExistingLocalDecls prevFvarDecls do
-        match fvar with
-        | .cdecl index fvarId userName type bi kind =>
-          return (.cdecl index fvarId userName (← _root_.modMap type) bi kind)::prevFvarDecls
-        | .ldecl index fvarId userName type value nondep kind =>
-          return (.ldecl index fvarId userName (← _root_.modMap type) (← _root_.modMap value) nondep kind)::prevFvarDecls
+        let ty ← _root_.modMap fvar.type
+        return (fvar.setType ty)::prevFvarDecls
     let fvarDecls := fvarDecls.reverse
     let patterns ← withExistingLocalDecls fvarDecls do patterns.mapM Pattern.modMap
     trace[Modular.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
@@ -82,12 +79,12 @@ def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
   return {discrs, matchType, lhss, rhss : MatcherBundle}
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
-  let {discrs, matchType, lhss, rhss} := m
+  let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
   trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
     trace[Modular.Match] "matchType: {matchType}"
-    let (discrs, matchType, alts, _) ← elabMatchAltViews false discrs matchType matchAlts --TODO allow generalisations ?
+    let (discrs, matchType, alts, _) ← elabMatchAltViews false oldDiscrs matchType matchAlts --TODO allow generalisations ?
     trace[Modular.Match] "alts elaborated"
     synthesizeSyntheticMVarsUsingDefault
     let rhss := alts.map Prod.snd
@@ -96,8 +93,36 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
     let altLHSS ← instantiateAltLHSs (alts.map Prod.fst)
     trace[Modular.Match] "altLHSS instantiated"
     return (discrs, matchType, altLHSS, rhss)
-  let lhss := lhss ++ newlhss
-  let rhss := rhss ++ newrhss
+  -- If the new branches need some indices to be generalized, we assume they can simply be generalised to variables in the previous branches since the information regarding those indices was useless until now. If this doesn't work, I will probably need to rewrite a version of `elabMatchAltViews` that also generalizes elaborated AltLHSs on the go, which I would much rather avoid doing...
+  let mut updatedOldLhss := #[]
+  let mut updatedOldRhss := #[]
+  let numNewDiscrs := discrs.size - oldDiscrs.size
+  unless numNewDiscrs = 0 do
+    for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
+      let mut fvarDecls := fvarDecls
+      let mut patterns := patterns
+      for newIndex in discrs[0...numNewDiscrs] do
+        let indexType ← inferType newIndex.expr
+        let newldcl ← withLocalDecl `x .default indexType fun fvar => FVarId.getDecl fvar.fvarId!
+        fvarDecls ← fvarDecls.mapM fun ldcl => do
+          let ty := (← kabstract ldcl.type newIndex.expr).instantiate1 (Expr.fvar newldcl.fvarId)
+          return ldcl.setType ty
+        fvarDecls := newldcl::fvarDecls
+        -- This feels so hacky............
+        patterns ← patterns.mapM fun pat => do
+          let e ← pat.toExpr
+          let e ← kabstract e newIndex.expr
+          let e := e.instantiate1 (Expr.fvar newldcl.fvarId)
+          trace[Modular.Match] "pattern generalisation: {e}"
+          ToDepElimPattern.toPattern e
+        patterns := (Pattern.var newldcl.fvarId)::patterns
+        let newRhs ← kabstract rhs newIndex.expr
+        let newRhs := Expr.lam `x indexType newRhs .default
+        trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
+        updatedOldRhss := updatedOldRhss.push newRhs
+      updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
+  let lhss := updatedOldLhss.toList ++ newlhss
+  let rhss := updatedOldRhss ++ newrhss
   let numDiscrs := discrs.size
   let matcherName ← mkAuxName `match
   trace[Modular.Match] "matcherName : {matcherName}"
