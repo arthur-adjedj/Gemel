@@ -41,9 +41,13 @@ structure ModularState where
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
   modifyMap : (ModularMap → ModularMap) → m Unit
+export MonadModular (getMap modifyMap)
+
+
+class MonadMatchExt (m) [Monad m] where
   addMatchExtension : MatchToExtend → m Unit
   getMatchExtensions : m (Array MatchToExtend)
-export MonadModular (getMap modifyMap addMatchExtension getMatchExtensions)
+export MonadMatchExt (addMatchExtension getMatchExtensions)
 
 def setMap [Monad m] [MonadModular m] (map: ModularMap) : m Unit := modifyMap fun _ => map
 
@@ -62,15 +66,28 @@ def withSetMap [Monad m] [MonadModular m] (map : ModularMap) (k : m α) : m α :
   return res
 
 instance [Monad m] : MonadModular (StateT ModularState m) where
-  getMap m := pure (m.map,m)
+  getMap := get >>= pure ∘ ModularState.map
   modifyMap f := modify fun m =>  {m with map := f m.map}
+
+instance [Monad m] : MonadModular (StateT ModularMap m) where
+  getMap := get
+  modifyMap f := modify f
+
+instance [Monad m] : MonadMatchExt (StateT ModularState m) where
   addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}
-  getMatchExtensions s := pure (s.matchesToExtend,s)
+  getMatchExtensions := get >>= pure ∘ ModularState.matchesToExtend
 
 abbrev ModularM := StateT ModularState TermElabM
-abbrev ModularElabM := StateT ModularState CommandElabM -- TODO only `ModularM` should carry the match extensions machinery, as it should be reset between each command.
+abbrev ModularElabM := StateT ModularMap CommandElabM
 
-def liftModularM (k : ModularM α) : ModularElabM α := fun map => liftTermElabM (k map)
+/- Warning: the function drops any potential match extension information. If you want to use this information later, use `withLiftModularM` -/
+def liftModularM (k : ModularM α) : ModularElabM α := fun map => do
+  let (res,state) ← liftTermElabM (k ⟨map,#[]⟩)
+  return (res,state.map)
+
+def withLiftModularM (k : ModularM Unit) (k' : Array MatchToExtend → ModularElabM α) : ModularElabM α := fun map => do
+  let (_,state) ← liftTermElabM (k ⟨map,#[]⟩)
+  k' state.matchesToExtend |>.run state.map
 
 public meta section
 
@@ -122,7 +139,7 @@ def withoutModularCommandIncrementality (cond : Bool) (act : ModularElabM α) : 
     return !cond
   }) act
 
-def elabModularCommandUsing (s : ModularState) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
+def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                =>
     withInfoTreeContext
       (mkInfoTree := fun trees =>
@@ -192,7 +209,7 @@ structure ModularBlockSnapshot extends Snapshot where
   /-- Input modular commands. -/
   cmds : Array Syntax
   /-- Command state and modular map after each corresponding modular command. -/
-  outputs : Array (Command.State × ModularState)
+  outputs : Array (Command.State × ModularMap)
 deriving TypeName
 
 open Language in
@@ -212,8 +229,8 @@ def elabModularBlock : CommandElab := fun stx => do
       if snap.old?.isSome && oldSnap?.isNone then
         snap.old?.forM (·.val.cancelRec)
       let opts ← getOptions
-      let mut map : ModularState := {}
-      let mut outputs : Array (Command.State × ModularState) := #[]
+      let mut map : ModularMap := {}
+      let mut outputs : Array (Command.State × ModularMap) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
       let mut reusedPrefix := true
