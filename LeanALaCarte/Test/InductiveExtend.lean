@@ -4,6 +4,7 @@ public import LeanALaCarte.ModMap
 public import LeanALaCarte.CheckTranslation
 public import LeanALaCarte.ExtendInd
 public import LeanALaCarte.ModDef
+public import LeanALaCarte.ModularCommand
 public import Lean.Meta.Check
 public import Qq
 
@@ -30,7 +31,7 @@ meta def testmap : ModularMap :=
 elab "#partial_map" e:term : command =>
   liftTermElabM do
     let e ← elabTerm e none
-    let mapped_term ← modMap testmap e
+    let (mapped_term,_) ← modMap e |>.run ⟨testmap,#[]⟩
     logInfo m!"{mapped_term}"
 
 set_option pp.mvars.levels false
@@ -63,8 +64,9 @@ modular
     | succ' : Natt' → Natt'
 
 modular
+
   /-- info: Natt'.succ' : Natt' → Natt' -/
-#guard_msgs in
+  #guard_msgs in
   #check Natt'.succ'
 
 modular
@@ -148,31 +150,7 @@ def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
   | var h => .var (R _ h)
 set_option pp.match false in
 
-run_cmd liftTermElabM do
-  let n? ← getEqDef? `Var.wk
-  logInfo n?
-
--- set_option trace.profiler true
--- set_option trace.Elab.definition.body true
 modular
   inductive Term extends Var where
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
-
-  mod_def Term.wk extends Var.wk
-  where
-    · intro _ _ _ a _ _ _
-      subst_vars
-      apply Term.lam
-      exact Term.wk (R.ext _) a
-    · intro _ _ _ a b _ _ _
-      subst_vars
-      apply Term.app
-      · exact Term.wk R a
-      · exact Term.wk R b
-
-end test5
-
-
-/- TODO for next time you read this file and have an internet connection:
-   The hard question wrt extending inductive types horizontally is, of course, to infer where possibly add new bindings in the translated functions for the parameters/indices introduced. IIRC Andras Kovacs produced a paper that inferring where to place new implicit parameters in DTTs. Despite the problem being an undecidable scheduling system, he does provide some interesting heuristics I think. It might be the right way to look at things.-/

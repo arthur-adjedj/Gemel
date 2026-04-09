@@ -73,7 +73,7 @@ modular
     foo with
       | n, Natt.succ' k => (Natt.add' n k).succ'
   termination_by structural _ x => x
--- #exit
+
 modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
