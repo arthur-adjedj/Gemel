@@ -285,8 +285,9 @@ meta def elabModDef : ModularElab := fun stx =>
         | throwError "Missing `where ... finally` block to solve the missing holes"
       Term.withDeclName newFunName do solveGoalsWithTactic tac mvars
     trace[Modular.Elab] "Tactics elaborated"
-    mappedValues ← mappedValues.mapM instantiateMVars
     mappedValues.forM fun e => Meta.check e
+    Term.synthesizeSyntheticMVarsNoPostponing
+    mappedValues ← mappedValues.mapM instantiateMVars
     if mappedValues.any Expr.hasExprMVar then
       throwError "`mod_def` generated unresolved metavariables"
     addDeclarationRangesFromSyntax newFunName newFun
