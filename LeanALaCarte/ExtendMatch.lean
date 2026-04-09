@@ -33,13 +33,14 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   let discrsExpr := args[info.getFirstDiscrPos...(info.getFirstDiscrPos + info.numDiscrs)]
   let discrs := discrsExpr.toArray.zipWith (bs := info.discrInfos) fun e h => ⟨e,h.1.map (TSyntax.raw ∘ mkIdent)⟩
   let rhss := args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
-  forallBoundedTelescope matcherType (some <| info.numParams + 1) fun _ ty => do
-    let altTys : Array Expr ← forallTelescopeReducing ty fun matchBinders _ => matchBinders[info.numDiscrs...info.numDiscrs+ info.numAlts].toArray.mapM inferType
+  forallBoundedTelescope matcherType (some 1) fun _ ty => do
+    let altTys ← forallTelescopeReducing ty fun matchBinders _ => matchBinders[info.numDiscrs...info.numDiscrs + info.numAlts].toArray.mapM inferType
     trace[Modular.Match] "altTys : {altTys}"
-    let lhss : Array AltLHS ← altTys.mapM fun altTy => forallTelescopeReducing altTy fun _ e => e.withApp fun _motive margs => do
+    let lhss : Array AltLHS ← altTys.mapM fun altTy => forallTelescopeReducing altTy fun xs body => do
+      let xs ← xs.filterM fun x => dependsOn body x.fvarId!
+      body.withApp fun _motive margs => do
       let pats ←  margs.mapM toPattern
-      let (_,fvars) ← (pats.forM Pattern.collectFVars).run {}
-      let fvarDecls ← fvars.fvarIds.mapM FVarId.getDecl
+      let fvarDecls ← xs.mapM fun fvar => fvar.fvarId!.getDecl
       return { ref := .missing
                fvarDecls := fvarDecls.toList
                patterns := pats.toList }
@@ -59,17 +60,26 @@ partial def Lean.Meta.Match.Pattern.modMap : Pattern → ModularM Pattern
 def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
   let {discrs, matchType, lhss, rhss} := m
   let discrs ← discrs.mapM fun ⟨expr, h?⟩ => do return ⟨← _root_.modMap expr, h?⟩
+  trace[Modular.Match] "translated discrs : {discrs.map Discr.expr}"
+  trace[Modular.Match] "old matchType : {matchType}"
   let matchType ← _root_.modMap matchType
   let lhss ← lhss.mapM fun {ref, fvarDecls, patterns} => do
-    let fvarDecls ← fvarDecls.mapM fun --TODO this should be its own function
-      | .cdecl index fvarId userName type bi kind => do
-        return .cdecl index fvarId userName (← _root_.modMap type) bi kind
-      | .ldecl index fvarId userName type value nondep kind => do
-        return .ldecl index fvarId userName (← _root_.modMap type) (← _root_.modMap value) nondep kind
-    let patterns ← patterns.mapM Pattern.modMap
+    --TODO put behind a function
+    let fvarDecls ← fvarDecls.foldlM (init := []) fun prevFvarDecls fvar => do
+      withExistingLocalDecls prevFvarDecls do
+        match fvar with
+        | .cdecl index fvarId userName type bi kind =>
+          return (.cdecl index fvarId userName (← _root_.modMap type) bi kind)::prevFvarDecls
+        | .ldecl index fvarId userName type value nondep kind =>
+          return (.ldecl index fvarId userName (← _root_.modMap type) (← _root_.modMap value) nondep kind)::prevFvarDecls
+    let fvarDecls := fvarDecls.reverse
+    let patterns ← withExistingLocalDecls fvarDecls do patterns.mapM Pattern.modMap
+    trace[Modular.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
     return {ref, fvarDecls, patterns : AltLHS}
+  trace[Modular.Match] "lhss translated"
   let rhss ← rhss.mapM _root_.modMap
-  return {discrs, matchType, lhss, rhss}
+  trace[Modular.Match] "rhss translated"
+  return {discrs, matchType, lhss, rhss : MatcherBundle}
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
   let {discrs, matchType, lhss, rhss} := m
