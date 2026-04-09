@@ -20,6 +20,20 @@ public meta section
 
 open Lean Parser Elab Meta
 
+instance : ToString Match.AltParamInfo where
+  toString info :=
+  let {numFields, numOverlaps, hasUnitThunk} := info
+  s!"⦃ numFields : {numFields}, numOverlaps : {numOverlaps}, hasUnitThunk : {hasUnitThunk} ⦄"
+
+instance : ToString MatcherInfo where
+  toString info :=
+  let {numParams, numDiscrs, altInfos, uElimPos?, ..} := info
+  s!"⦃ numParams : {numParams},
+  numDiscrs : {numDiscrs},
+  altInfos : {altInfos},
+  uElimPos? : {uElimPos?} ⦄"
+
+
 def Lean.ConstantInfo.kind! (cinfo : ConstantInfo) : DefKind := match cinfo with
   | .defnInfo _ => .def
   | .thmInfo _ => .theorem
@@ -67,31 +81,30 @@ def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader
   return { cinfo, newName, isAux, type }
 
 def collectExprConstants (exprs : Array Expr) : NameSet :=
-  exprs.foldl (init := {}) fun names e => e.foldConsts names fun c cs => cs.insert c
+  exprs.foldl (init := {}) fun names e => e.foldConsts names (flip NameSet.insert)
 
 --AI Slop that works, TODO review
 def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : NameSet)
     (roots : NameSet) : TermElabM (Std.HashMap Name ConstantInfo) := do
-  profileitM Exception s!"collectRetainedDecls" (← getOptions) do
-    let envAfter ← getEnv
-    let mut retained : Std.HashMap Name ConstantInfo := {}
-    let mut seen : NameSet := {}
-    let mut worklist : List Name := roots.toList
-    while !worklist.isEmpty do
-      let name := worklist.head!
-      worklist := worklist.tail!
-      if seen.contains name then
-        continue
-      seen := seen.insert name
-      if envBefore.contains name || tempAxiomNames.contains name then
-        continue
-      let some cinfo := envAfter.find? name
-        | continue
-      retained := retained.insert name cinfo
-      for depName in cinfo.getUsedConstantsAsSet do
-        if !tempAxiomNames.contains depName && !seen.contains depName then
-          worklist := depName :: worklist
-    return retained
+  let envAfter ← getEnv
+  let mut retained : Std.HashMap Name ConstantInfo := {}
+  let mut seen : NameSet := {}
+  let mut worklist : List Name := roots.toList
+  while !worklist.isEmpty do
+    let name := worklist.head!
+    worklist := worklist.tail!
+    if seen.contains name then
+      continue
+    seen := seen.insert name
+    if envBefore.contains name || tempAxiomNames.contains name then
+      continue
+    let some cinfo := envAfter.find? name
+      | continue
+    retained := retained.insert name cinfo
+    for depName in cinfo.getUsedConstantsAsSet do
+      if !tempAxiomNames.contains depName && !seen.contains depName then
+        worklist := depName :: worklist
+  return retained
 
 structure TopoRetainedState where
   visiting : NameSet := {}
@@ -139,10 +152,11 @@ def Lean.ConstantInfo.toDeclaration! : ConstantInfo → Declaration
   | .ctorInfo   _ => panic! "toDeclaration for ctorInfo not implemented"
   | .recInfo    _ => panic! "toDeclaration for recInfo not implemented"
 
-def replayRetainedDecls (decls : Array ConstantInfo) : TermElabM Unit := do
-profileitM Exception s!"replayRetainedDecls" (← getOptions) do
-  for cinfo in decls do
-    addDecl cinfo.toDeclaration!
+def replayRetainedDecls (decls : Array ConstantInfo) : CoreM Unit :=
+  decls.forM fun cinfo => addDecl cinfo.toDeclaration!
+
+def replayMatcherExts (infos : Array (Name × MatcherInfo)) : CoreM Unit :=
+  infos.forM Match.addMatcherInfo.uncurry
 
 /- TODO adapt syntax to take into account:
 - docstrings
@@ -223,7 +237,7 @@ meta def elabModDef : ModularElab := fun stx =>
           modifyMap fun m => m.insert oldFunName.eraseMacroScopes newMapEntry
           let mappedType ← modMap cinfo.type
           addDecl <| .axiomDecl { name := newName
-                                  levelParams := cinfo.levelParams
+                                  levelParams
                                   type := mappedType
                                   isUnsafe := false }
         let mut mappedValue ← modMapValueOrEqDef cinfo isAux
@@ -235,11 +249,10 @@ meta def elabModDef : ModularElab := fun stx =>
           throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
         mappedTypes := mappedTypes.push mappedType
         if isAux then
-          addDecl <| .axiomDecl
-            { name := newName
-              levelParams := cinfo.levelParams
-              type := mappedType
-              isUnsafe := false }
+          addDecl <| .axiomDecl { name := newName
+                                  levelParams := cinfo.levelParams
+                                  type := mappedType
+                                  isUnsafe := false }
           addAuxMapping cinfo.name newName
 
     trace[Modular.Elab] "Mapped values : {mappedValues}"
@@ -258,7 +271,8 @@ meta def elabModDef : ModularElab := fun stx =>
         let matcherBundle ← matcherBundle.modMap
         trace[Modular.Elab] "matcherBundle modmapped"
         trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
-        mvar.assign (← Term.withDeclName newFunName do matcherBundle.mkMatcher alts)
+        let newMatcherExpr ← Term.withDeclName newFunName do matcherBundle.mkMatcher alts
+        mvar.assign newMatcherExpr
     -- We solve mvars generated by extended matches separately
     mvars := mvars.filter (· ∉ matchMVars)
     trace[Modular.Elab] "Mvars : {mvars.map Expr.mvar}"
@@ -276,18 +290,20 @@ meta def elabModDef : ModularElab := fun stx =>
     if mappedValues.any Expr.hasExprMVar then
       throwError "`mod_def` generated unresolved metavariables"
     addDeclarationRangesFromSyntax newFunName newFun
-    let tempAxiomNames : NameSet := Id.run do
-      let mut names : NameSet := {}
-      for {newName, ..} in mapHeaders do
-        names := names.insert newName
-      return names
+    -- This whole part is as flaky as it gets. In particular, we **only** reset the declarations, we don't do anything for possibly arbitrary other environment extensions. In particular, we do need to keep the `MatcherInfoExt` for predefinitions to elaborate correctly, so we hack around that particular part for now (TODO do better...)
+    let tempAxiomNames := mapHeaders.foldl (init := {}) fun acc {newName, ..} => acc.insert newName
     let retainedRoots := collectExprConstants (mappedValues ++ mappedTypes)
     let retainedDeclMap ← collectRetainedDecls oldEnv tempAxiomNames retainedRoots
     let retainedDecls ← topoSortRetainedDecls retainedDeclMap
-    trace[Modular.Elab] "Retaining {retainedDecls.size} generated declarations from tactic elaboration"
+    trace[Modular.Elab] "Retaining the following new declarations: {retainedDecls.map ConstantInfo.name}"
+    let matcherExts ← retainedDecls.filterMapM fun cinfo => do
+      let some info ← getMatcherInfo? cinfo.name | pure none
+      pure <| some (cinfo.name,info)
     trace[Modular.Elab] "Setting old env back"
     setEnv oldEnv
     replayRetainedDecls retainedDecls
+    replayMatcherExts matcherExts
+    trace[Modular.Elab] m!"TODO remove 2: {← retainedDecls.mapM fun cinfo => getMatcherInfo? cinfo.name}"
     let mut predefs : Array PreDefinition:= #[]
     for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
       let predef := { ref := stx
@@ -303,18 +319,4 @@ meta def elabModDef : ModularElab := fun stx =>
     trace[Modular.Elab] "Predefs : {predefs}"
     addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
     trace[Modular.Elab] "Predefs elaborated successfully"
-
   | _ => throwUnsupportedSyntax
-
-instance : ToString Match.AltParamInfo where
-  toString info :=
-  let {numFields, numOverlaps, hasUnitThunk} := info
-  s!"⦃ numFields : {numFields}, numOverlaps : {numOverlaps}, hasUnitThunk : {hasUnitThunk} ⦄"
-
-instance : ToString MatcherInfo where
-  toString info :=
-  let {numParams, numDiscrs, altInfos, uElimPos?, ..} := info
-  s!"⦃ numParams : {numParams},
-  numDiscrs : {numDiscrs},
-  altInfos : {altInfos},
-  uElimPos? : {uElimPos?} ⦄"

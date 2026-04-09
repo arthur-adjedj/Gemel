@@ -16,7 +16,7 @@ def base (n : Nat) : Nat := Nat.succ n
 modular
   mod_def base' extends base
 
--- example (n : Nat) : base' n = Nat.succ n := rfl
+example (n : Nat) : base' n = Nat.succ n := rfl
 
 theorem t : True := trivial
 
@@ -29,7 +29,7 @@ def baseWrap (n : Nat) : Nat := base n
 modular
   mod_def baseWrap' extends baseWrap
 
--- example (n : Nat) : baseWrap' n = Nat.succ n := rfl
+example (n : Nat) : baseWrap' n = Nat.succ n := rfl
 
 def idNat (n : Nat) : Nat := n
 
@@ -47,7 +47,6 @@ def Vec.append (v₁ : Vec α n) (v₂ : Vec α k) : Vec α (k.add n) :=
   | cons (n := n) a v₁ => cons a (v₁.append v₂)
 termination_by sizeOf v₁
 
-set_option trace.Elab.definition.structural true in
 def Nat.add : Nat → Nat → Nat
   | a, Nat.zero   => a
   | a, Nat.succ b => Nat.succ (Nat.add a b)
@@ -66,39 +65,28 @@ modular
       | .succ _
       | .succ' _ => .zero
 
-    --works at last !!!!!!
     mod_def Natt.add'' extends Nat.add' where
     foo with
       | Natt.succ' n => fun k => (Natt.add'' n k).succ'
 
-  -- set_option trace.Modular.Elab true in
-  -- set_option trace.Modular.Match true in
-  -- set_option pp.rawOnError true in
-  -- set_option trace.Elab.match true in
-  -- set_option pp.match false in
-  -- set_option trace.Meta.Match.debug true in
-  -- set_option trace.Meta.Match.match true in
-  set_option trace.Elab.definition.structural true in
   mod_def Natt.add' extends Nat.add where
     foo with
       | n, Natt.succ' k => (Natt.add' n k).succ'
-  termination_by structural n x => x
 
--- #check Natt.add'.match_1
-run_cmd Command.liftTermElabM do --This should be `some ...`, This causes the failure above
-  logInfo m!"{← getMatcherInfo? ``Natt.add'.match_1}"
-
-    -- expose_names
-    -- exact match x with
-      -- | .zero => n
-      -- | .succ k => (Natt.add' n k).succ
-      -- | .succ' k => (Natt.add' n k).succ'
-  -- termination_by _ x => x
-#exit
+-- #exit
 modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
+  set_option trace.Modular.Elab true in
+  set_option trace.Modular.Match true in
+  set_option trace.Modular.Subst true in
+  set_option pp.rawOnError true in
+  set_option trace.Elab.match true in
+  set_option pp.match false in
+  set_option trace.Meta.Match.debug true in
+  set_option trace.Meta.Match.match true in
+  set_option trace.Elab.definition.structural true in
   mod_def Vecc.append extends Vec.append where
     foo with
       | cons' hd tl => Vecc.cons' hd (Vecc.append tl)
