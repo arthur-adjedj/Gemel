@@ -87,7 +87,7 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
     trace[Modular.Match] "matchType: {matchType}"
-    let (discrs, matchType, alts, _) ← elabMatchAltViews false oldDiscrs matchType matchAlts --TODO allow generalisations ?
+    let (discrs, matchType, alts, _) ← elabMatchAltViews true oldDiscrs matchType matchAlts --TODO allow generalisations ?
     trace[Modular.Match] "alts elaborated"
     synthesizeSyntheticMVarsUsingDefault
     let rhss := alts.map Prod.snd
@@ -101,7 +101,6 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let mut updatedOldRhss := #[]
   let numNewDiscrs := discrs.size - oldDiscrs.size
   trace[Modular.Match] "new discrs : {discrs[0...numNewDiscrs].toArray.map Discr.expr}"
-  if numNewDiscrs = 0 then
     for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
       let mut fvarDecls := fvarDecls
       let mut patterns := patterns
@@ -126,9 +125,6 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
         trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
       updatedOldRhss := updatedOldRhss.push newRhs
       updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
-  else
-    updatedOldLhss := oldlhss.toArray --ewwwwwww
-    updatedOldRhss := oldrhss
   let lhss := updatedOldLhss.toList ++ newlhss
   let rhss := updatedOldRhss ++ newrhss
   unless lhss.length == rhss.size do
