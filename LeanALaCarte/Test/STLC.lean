@@ -37,10 +37,16 @@ modular
     | plus : NatExt Γ .nat → NatExt Γ .nat → NatExt Γ .nat
 
   mod_def NatExt.wk extends Var.wk where
-    foo with
+    match_1 R with
       | .const a => .const a
       | .plus a b => .plus (a.wk R) (b.wk R)
 
+  mod_def NatExt.subst extends Var.subst where
+    match_1 s with
+      | .const a => .const a
+      | .plus a b => .plus (a.subst s) (b.subst s)
+
+-- #exit
 modular
   inductive LamTy extends NatTy where
     | arr : LamTy → LamTy → LamTy
@@ -56,7 +62,7 @@ modular
 
   -- def Term.subst_ext {} (s : ∀ {A}, Γ.Mem A → Term Δ A)
 
-  mod_def Term.subst extends Var.subst where
+  mod_def Term.subst extends NatExt.subst where
     match_1 with
       | .lam f => sorry
       | .app a b => .app (a.subst s) (b.subst s)

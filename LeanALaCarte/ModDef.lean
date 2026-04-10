@@ -152,11 +152,12 @@ def Lean.ConstantInfo.toDeclaration! : ConstantInfo → Declaration
   | .ctorInfo   _ => panic! "toDeclaration for ctorInfo not implemented"
   | .recInfo    _ => panic! "toDeclaration for recInfo not implemented"
 
-def replayRetainedDecls (decls : Array ConstantInfo) : CoreM Unit :=
-  decls.forM fun cinfo => addDecl cinfo.toDeclaration!
-
-def replayMatcherExts (infos : Array (Name × MatcherInfo)) : CoreM Unit :=
-  infos.forM Match.addMatcherInfo.uncurry
+def replayRetainedDecls (decls : Array ConstantInfo) (matchExts : Array (Option MatcherInfo)): CoreM Unit :=
+  for cinfo in decls, matchInfo? in matchExts do
+    addDecl cinfo.toDeclaration!
+    if let some matcherInfo := matchInfo? then
+      Match.addMatcherInfo cinfo.name matcherInfo
+    enableRealizationsForConst cinfo.name
 
 /- TODO adapt syntax to take into account:
 - docstrings
@@ -173,6 +174,7 @@ def modular_where_match_clause := leading_parser
   Term.ident >> many Term.ident >> "with " >> checkColGt >> many Term.matchAlt
 
 structure MatchClause where
+  ref  : Syntax
   name : Name
   argNames : Array Name --TODO use that to rename context vars
   alts : Array Term.TermMatchAltView
@@ -181,7 +183,7 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   let name := stx[0].getId
   let argNames := stx[1].getArgs.map Syntax.getId
   let alts := stx[3].getArgs.filterMap (Term.getMatchAlt `term)
-  { name, argNames, alts }
+  { ref := stx, name, argNames, alts }
 
 syntax (name := modular_mod_def)
   declModifiers "mod_def" ident "extends" ident ("where " colGt modular_where_match_clause* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
@@ -262,7 +264,11 @@ meta def elabModDef : ModularElab := fun stx =>
     if matchExtensions.size != matchClauses.size then
       throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
     -- TODO check matchName/name conformance, do context renaming using `argNames`
-    for {matchName, mvar, originalMatch} in matchExtensions, {name, argNames, alts} in matchClauses do
+    for {matchName, mvar, originalMatch} in matchExtensions, {ref, name, argNames, alts} in matchClauses do
+      withRef ref do
+      let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
+      unless Name.mkSimple matchName = name do
+        throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
       -- Problem: right now, there is absolutely no guarantee that `originalMatch` is well-formed in the current context (namely, the fvars' types/values have been modmapped here already.), `matchExtensions` (and so `modMap`) should keep a copy of the original context during its traversal in order to reuse it here. Let's just pretend that's not an issue for now..
       mvar.withContext do
         trace[Modular.Elab] "originalMatch : {originalMatch}"
@@ -297,14 +303,10 @@ meta def elabModDef : ModularElab := fun stx =>
     let retainedDeclMap ← collectRetainedDecls oldEnv tempAxiomNames retainedRoots
     let retainedDecls ← topoSortRetainedDecls retainedDeclMap
     trace[Modular.Elab] "Retaining the following new declarations: {retainedDecls.map ConstantInfo.name}"
-    let matcherExts ← retainedDecls.filterMapM fun cinfo => do
-      let some info ← getMatcherInfo? cinfo.name | pure none
-      pure <| some (cinfo.name,info)
+    let matcherExts ← retainedDecls.mapM fun cinfo => getMatcherInfo? cinfo.name
     trace[Modular.Elab] "Setting old env back"
     setEnv oldEnv
-    replayRetainedDecls retainedDecls
-    replayMatcherExts matcherExts
-    trace[Modular.Elab] m!"TODO remove 2: {← retainedDecls.mapM fun cinfo => getMatcherInfo? cinfo.name}"
+    replayRetainedDecls retainedDecls matcherExts
     let mut predefs : Array PreDefinition:= #[]
     for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
       let predef := { ref := stx
