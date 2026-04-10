@@ -36,6 +36,7 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   forallBoundedTelescope matcherType (some 1) fun _ ty => do
     let altTys ← forallTelescopeReducing ty fun matchBinders _ => matchBinders[info.numDiscrs...info.numDiscrs + info.numAlts].toArray.mapM inferType
     trace[Modular.Match] "altTys : {altTys}"
+    trace[Modular.Match] "rhss : {rhss}"
     let lhss : Array AltLHS ← altTys.mapM fun altTy => forallTelescopeReducing altTy fun xs body => do
       let xs ← xs.filterM fun x => dependsOn body x.fvarId!
       body.withApp fun _motive margs => do
@@ -80,6 +81,8 @@ def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
   let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
+  unless oldlhss.length == oldrhss.size do
+    throwError "Unexpected error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
   trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
@@ -97,32 +100,39 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let mut updatedOldLhss := #[]
   let mut updatedOldRhss := #[]
   let numNewDiscrs := discrs.size - oldDiscrs.size
-  unless numNewDiscrs = 0 do
+  trace[Modular.Match] "new discrs : {discrs[0...numNewDiscrs].toArray.map Discr.expr}"
+  if numNewDiscrs = 0 then
     for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
       let mut fvarDecls := fvarDecls
       let mut patterns := patterns
-      for newIndex in discrs[0...numNewDiscrs] do
-        let indexType ← inferType newIndex.expr
+      let mut newRhs := rhs
+      for {expr := newIndex, ..} in discrs[0...numNewDiscrs] do
+        let indexType ← inferType newIndex
         let newldcl ← withLocalDecl `x .default indexType fun fvar => FVarId.getDecl fvar.fvarId!
         fvarDecls ← fvarDecls.mapM fun ldcl => do
-          let ty := (← kabstract ldcl.type newIndex.expr).instantiate1 (Expr.fvar newldcl.fvarId)
-          return ldcl.setType ty
+          let ty := (← kabstract ldcl.type newIndex).instantiate1 (Expr.fvar newldcl.fvarId)
+          pure (ldcl.setType ty)
         fvarDecls := newldcl::fvarDecls
         -- This feels so hacky............
         patterns ← patterns.mapM fun pat => do
           let e ← pat.toExpr
-          let e ← kabstract e newIndex.expr
+          let e ← kabstract e newIndex
           let e := e.instantiate1 (Expr.fvar newldcl.fvarId)
           trace[Modular.Match] "pattern generalisation: {e}"
           ToDepElimPattern.toPattern e
         patterns := (Pattern.var newldcl.fvarId)::patterns
-        let newRhs ← kabstract rhs newIndex.expr
-        let newRhs := Expr.lam `x indexType newRhs .default
+        newRhs ← kabstract newRhs newIndex
+        newRhs := Expr.lam `x indexType newRhs .default
         trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
-        updatedOldRhss := updatedOldRhss.push newRhs
+      updatedOldRhss := updatedOldRhss.push newRhs
       updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
+  else
+    updatedOldLhss := oldlhss.toArray --ewwwwwww
+    updatedOldRhss := oldrhss
   let lhss := updatedOldLhss.toList ++ newlhss
   let rhss := updatedOldRhss ++ newrhss
+  unless lhss.length == rhss.size do
+    throwError "Unexpected error: number of lhs ({lhss.length}) and rhs ({rhss.size}) in generated match differ"
   let numDiscrs := discrs.size
   let matcherName ← mkAuxName `match
   trace[Modular.Match] "matcherName : {matcherName}"
