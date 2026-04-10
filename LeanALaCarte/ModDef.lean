@@ -152,6 +152,7 @@ meta def elabModDef : ModularElab := fun stx =>
             numHoles := 0}
           mappings :=  (oldFunName.eraseMacroScopes,newMapEntry)::mappings
         return (.insertMany · mappings)
+      -- mapped values are constructed in a temp map that contains the declarations being currently defined
       withModifyMap add_temp_mappings do
         let mut mvars := []
         let mut mappedValues := #[]
@@ -183,6 +184,7 @@ meta def elabModDef : ModularElab := fun stx =>
           let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
           unless Name.mkSimple matchName = name do
             throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
+          -- Problem: right now, there is absolutely no guarantee that `originalMatch` is well-formed in the current context (namely, the fvars' types/values have been modmapped here already.), `matchExtensions` (and so `modMap`) should keep a copy of the original context during its traversal in order to reuse it here. Let's just pretend that's not an issue for now..
           mvar.withContext do
             trace[Modular.Elab] "originalMatch : {originalMatch}"
             let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
@@ -207,11 +209,14 @@ meta def elabModDef : ModularElab := fun stx =>
         mappedValues.forM fun e => Meta.check e
         Term.synthesizeSyntheticMVarsNoPostponing
         mappedValues ← mappedValues.mapM instantiateMVars
+
         let declsConsts := mapHeaders.map fun {cinfo, newName, ..} => mkConst newName (cinfo.levelParams.map Level.param)
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod_def` generated unresolved metavariables"
         addDeclarationRangesFromSyntax newFunName newFun
+
+        -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         let mut predefs : Array PreDefinition:= #[]
         for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
           let predef := { ref := stx
@@ -227,7 +232,7 @@ meta def elabModDef : ModularElab := fun stx =>
         trace[Modular.Elab] "Predefs : {predefs}"
         addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
         trace[Modular.Elab] "Predefs elaborated successfully"
-      -- Once all is done, we can leave the `withModifyMap` scope and add the correct mappings to the environment
+      -- All is done, we can leave the `withModifyMap` and `withLocalDeclsDND` scopes and add the correct mappings to the environment
     for {cinfo, newName, isAux, type} in mapHeaders do
         let newMapEntry := {
           expr := mkConst newName (cinfo.levelParams.map Level.param)
