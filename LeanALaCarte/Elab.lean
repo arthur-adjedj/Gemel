@@ -43,11 +43,11 @@ class MonadModular (m) [Monad m] where
   modifyMap : (ModularMap → ModularMap) → m Unit
 export MonadModular (getMap modifyMap)
 
+def addMapEntry [Monad m] [MonadModular m] (name : Name) (ext : ModularExtension) : m Unit :=
+  modifyMap fun m => m.insert name ext
 
-class MonadMatchExt (m) [Monad m] where
-  addMatchExtension : MatchToExtend → m Unit
-  getMatchExtensions : m (Array MatchToExtend)
-export MonadMatchExt (addMatchExtension getMatchExtensions)
+def addMapEntries [Monad m] [MonadModular m] (mappings : List (Name × ModularExtension)) : m Unit :=
+  modifyMap fun m => m.insertMany mappings
 
 def setMap [Monad m] [MonadModular m] (map: ModularMap) : m Unit := modifyMap fun _ => map
 
@@ -72,6 +72,11 @@ instance [Monad m] : MonadModular (StateT ModularState m) where
 instance [Monad m] : MonadModular (StateT ModularMap m) where
   getMap := get
   modifyMap f := modify f
+
+class MonadMatchExt (m) [Monad m] where
+  addMatchExtension : MatchToExtend → m Unit
+  getMatchExtensions : m (Array MatchToExtend)
+export MonadMatchExt (addMatchExtension getMatchExtensions)
 
 instance [Monad m] : MonadMatchExt (StateT ModularState m) where
   addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}

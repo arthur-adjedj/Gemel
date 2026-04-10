@@ -10,7 +10,7 @@ public section
 
 inductive Ty where
 
--- abbrev Env := List Ty
+set_option trace.Meta.Match.matchEqs true
 
 set_option inductive.autoPromoteIndices false in --Fails otherwise, should it not ?
 inductive Var : (Γ : List Ty) → Ty → Type
@@ -39,14 +39,14 @@ modular
   mod_def NatExt.wk extends Var.wk where
     match_1 R with
       | .const a => .const a
-      | .plus a b => .plus (a.wk R) (b.wk R)
+      | .plus a b => .plus (NatExt.wk R a) (NatExt.wk R b)
 
-  mod_def NatExt.subst extends Var.subst where
-    match_1 s with
-      | .const a => .const a
-      | .plus a b => .plus (a.subst s) (b.subst s)
+  -- mod_def NatExt.subst extends Var.subst where
+    -- match_1 s with
+      -- | .const a => .const a
+      -- | .plus a b => .plus (a.subst s) (b.subst s)
 
--- #exit
+
 modular
   inductive LamTy extends NatTy where
     | arr : LamTy → LamTy → LamTy
@@ -62,7 +62,7 @@ modular
 
   -- def Term.subst_ext {} (s : ∀ {A}, Γ.Mem A → Term Δ A)
 
-  mod_def Term.subst extends NatExt.subst where
-    match_1 with
-      | .lam f => sorry
-      | .app a b => .app (a.subst s) (b.subst s)
+  -- mod_def Term.subst extends NatExt.subst where
+    -- match_1 with
+      -- | .lam f => sorry
+      -- | .app a b => .app (a.subst s) (b.subst s)

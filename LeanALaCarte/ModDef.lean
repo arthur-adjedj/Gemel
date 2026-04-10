@@ -80,85 +80,6 @@ def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader
   assert! !type.hasMVar
   return { cinfo, newName, isAux, type }
 
-def collectExprConstants (exprs : Array Expr) : NameSet :=
-  exprs.foldl (init := {}) fun names e => e.foldConsts names (flip NameSet.insert)
-
---AI Slop that works, TODO review
-def collectRetainedDecls (envBefore : Environment) (tempAxiomNames : NameSet)
-    (roots : NameSet) : TermElabM (Std.HashMap Name ConstantInfo) := do
-  let envAfter ← getEnv
-  let mut retained : Std.HashMap Name ConstantInfo := {}
-  let mut seen : NameSet := {}
-  let mut worklist : List Name := roots.toList
-  while !worklist.isEmpty do
-    let name := worklist.head!
-    worklist := worklist.tail!
-    if seen.contains name then
-      continue
-    seen := seen.insert name
-    if envBefore.contains name || tempAxiomNames.contains name then
-      continue
-    let some cinfo := envAfter.find? name
-      | continue
-    retained := retained.insert name cinfo
-    for depName in cinfo.getUsedConstantsAsSet do
-      if !tempAxiomNames.contains depName && !seen.contains depName then
-        worklist := depName :: worklist
-  return retained
-
-structure TopoRetainedState where
-  visiting : NameSet := {}
-  visited : NameSet := {}
-  ordered : Array ConstantInfo := #[]
-
---AI Slop that works, TODO review
-partial def topoSortRetainedDeclsVisit
-    (declMap : Std.HashMap Name ConstantInfo)
-    (name : Name) : StateRefT TopoRetainedState TermElabM Unit := do
-  let s ← get
-  if s.visited.contains name then
-    return
-  if s.visiting.contains name then
-    throwError "cycle detected while ordering generated auxiliary declarations at `{name}`"
-  let some cinfo := declMap.get? name
-    | return
-  modify fun s => { s with visiting := s.visiting.insert name }
-  for depName in ConstantInfo.getUsedConstantsAsSet cinfo do
-    if declMap.contains depName then
-      topoSortRetainedDeclsVisit declMap depName
-  modify fun s =>
-    { s with
-      visiting := s.visiting.erase name
-      visited := s.visited.insert name
-      ordered := s.ordered.push cinfo }
-
---AI Slop that works, TODO review
-def topoSortRetainedDecls (declMap : Std.HashMap Name ConstantInfo) : TermElabM (Array ConstantInfo) := do
-  profileitM Exception s!"topoSortRetainedDecls" (← getOptions) do
-    let (_, s) ← (do
-      for name in declMap.keys do
-        topoSortRetainedDeclsVisit declMap name
-    : StateRefT TopoRetainedState TermElabM Unit) |>.run {}
-    return s.ordered
-
-/-- Turn a `ConstantInfo` into a declaration. Stolen from mathlib -/
-def Lean.ConstantInfo.toDeclaration! : ConstantInfo → Declaration
-  | .defnInfo   info => Declaration.defnDecl info
-  | .thmInfo    info => Declaration.thmDecl     info
-  | .axiomInfo  info => Declaration.axiomDecl   info
-  | .opaqueInfo info => Declaration.opaqueDecl  info
-  | .quotInfo   _ => panic! "toDeclaration for quotInfo not implemented"
-  | .inductInfo _ => panic! "toDeclaration for inductInfo not implemented"
-  | .ctorInfo   _ => panic! "toDeclaration for ctorInfo not implemented"
-  | .recInfo    _ => panic! "toDeclaration for recInfo not implemented"
-
-def replayRetainedDecls (decls : Array ConstantInfo) (matchExts : Array (Option MatcherInfo)): CoreM Unit :=
-  for cinfo in decls, matchInfo? in matchExts do
-    addDecl cinfo.toDeclaration!
-    if let some matcherInfo := matchInfo? then
-      Match.addMatcherInfo cinfo.name matcherInfo
-    enableRealizationsForConst cinfo.name
-
 /- TODO adapt syntax to take into account:
 - docstrings
 - attributes
@@ -195,15 +116,15 @@ instance : ToMessageData PreDefinition where
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do
+  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
     let modifiers ← elabModifiers mod
-    let modifiers := {modifiers with computeKind := .noncomputable} -- For now, generated expressions contain `.brecOns` often, which the lean compiler doesn't currently handle.
+    let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
     let newFunName := (← getCurrNamespace) ++ newFun.getId
     withRef stx do
-    let cinfo ← getConstInfo oldFunName
-    unless cinfo.hasValue do
+    let oldFunCinfo ← getConstInfo oldFunName
+    unless oldFunCinfo.hasValue do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
     let unfoldEqn? ← getUnfoldEqnFor? oldFunName
     let extraMapNames ←
@@ -217,109 +138,102 @@ meta def elabModDef : ModularElab := fun stx =>
       let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
       mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
     mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName false)
-
-    let oldEnv ← getEnv
-
-    let mut mvars := []
-    let mut mappedValues := #[]
-    let mut mappedTypes := #[]
-
-    -- What follows from here is a horrible mess and should definitely be reworked to be more principled in the very near future..
-    for {cinfo, newName, isAux, ..} in mapHeaders do
-        trace[Modular.Elab] "elaborating {newName}"
-        -- If a function isn't an auxiliary, it might be recursive. As such, the shape of the function should be known (i.e we dont' have holes in it for now), and we need the mapping to already exist before translating the term, since the function might itself appear in its `eq_def` body.
-        if !isAux then
-          -- TODO put behind a function
-          let levelParams := cinfo.levelParams
+    let decls := mapHeaders.map fun {newName, type, ..} => (newName,type)
+    withLocalDeclsDND decls fun xs => do
+      let add_temp_mappings := Id.run do
+        let mut mappings := []
+        for {cinfo, newName, isAux, type} in mapHeaders, x in xs do
+          -- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
+          assert! cinfo.levelParams = oldFunCinfo.levelParams
           let newMapEntry := {
-            expr := mkConst newName (levelParams.map .param)
-            levelParams := levelParams
+            expr := x
+            levelParams := []
             numArgs := 0
             numHoles := 0}
-          modifyMap fun m => m.insert oldFunName.eraseMacroScopes newMapEntry
-          let mappedType ← modMap cinfo.type
-          addDecl <| .axiomDecl { name := newName
-                                  levelParams
-                                  type := mappedType
-                                  isUnsafe := false }
-        let mut mappedValue ← modMapValueOrEqDef cinfo isAux
-        let newMvars ← getMVarsNoDelayed mappedValue
-        mvars := newMvars.toList ++ mvars
-        mappedValues := mappedValues.push mappedValue
-        let mappedType ← inferType mappedValue
-        if mappedType.hasMVar then
-          throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
-        mappedTypes := mappedTypes.push mappedType
-        if isAux then
-          addDecl <| .axiomDecl { name := newName
-                                  levelParams := cinfo.levelParams
-                                  type := mappedType
-                                  isUnsafe := false }
-          addAuxMapping cinfo.name newName
+          mappings :=  (oldFunName.eraseMacroScopes,newMapEntry)::mappings
+        return (.insertMany · mappings)
+      withModifyMap add_temp_mappings do
+        let mut mvars := []
+        let mut mappedValues := #[]
+        let mut mappedTypes := #[]
 
-    trace[Modular.Elab] "Mapped values : {mappedValues}"
-    let matchExtensions ← getMatchExtensions
-    let matchMVars := matchExtensions.map MatchToExtend.mvar |> Std.HashSet.ofArray
-    let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
-    if matchExtensions.size != matchClauses.size then
-      throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
-    -- TODO check matchName/name conformance, do context renaming using `argNames`
-    for {matchName, mvar, originalMatch} in matchExtensions, {ref, name, argNames, alts} in matchClauses do
-      withRef ref do
-      let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
-      unless Name.mkSimple matchName = name do
-        throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
-      -- Problem: right now, there is absolutely no guarantee that `originalMatch` is well-formed in the current context (namely, the fvars' types/values have been modmapped here already.), `matchExtensions` (and so `modMap`) should keep a copy of the original context during its traversal in order to reuse it here. Let's just pretend that's not an issue for now..
-      mvar.withContext do
-        trace[Modular.Elab] "originalMatch : {originalMatch}"
-        let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-        trace[Modular.Elab] "matcherBundle generated"
-        let matcherBundle ← matcherBundle.modMap
-        trace[Modular.Elab] "matcherBundle modmapped"
-        trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
-        let newMatcherExpr ← Term.withDeclName newFunName do matcherBundle.mkMatcher alts
-        mvar.assign newMatcherExpr
-    -- We solve mvars generated by extended matches separately
-    mvars := mvars.filter (· ∉ matchMVars)
-    trace[Modular.Elab] "Mvars : {mvars.map Expr.mvar}"
+        -- What follows from here is a horrible mess and should definitely be reworked to be more principled in the very near future..
+        for {cinfo, newName, isAux, type} in mapHeaders do
+          trace[Modular.Elab] "elaborating {newName}"
+          let mut mappedValue ← modMapValueOrEqDef cinfo isAux
+          let newMvars ← getMVarsNoDelayed mappedValue
+          mvars := newMvars.toList ++ mvars
+          mappedValues := mappedValues.push mappedValue
+          let mappedType ← inferType mappedValue
+          unless ← isDefEq mappedType type do
+            throwError m!"Unexpected: mismatch between modmapped type and type of modmapped value : {type} ≠ {mappedType}"
+          if mappedType.hasMVar then
+            throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
+          mappedTypes := mappedTypes.push mappedType
 
-    if mvars.isEmpty  then
-      if tacs matches some (some _) then
-        throwError "Unexpected tactic block: the translation generated no obligations"
-    else
-      let some (some tac) := tacs
-        | throwError "Missing `where ... finally` block to solve the missing holes"
-      Term.withDeclName newFunName do solveGoalsWithTactic tac mvars
-    trace[Modular.Elab] "Tactics elaborated"
-    mappedValues.forM fun e => Meta.check e
-    Term.synthesizeSyntheticMVarsNoPostponing
-    mappedValues ← mappedValues.mapM instantiateMVars
-    if mappedValues.any Expr.hasExprMVar then
-      throwError "`mod_def` generated unresolved metavariables"
-    addDeclarationRangesFromSyntax newFunName newFun
-    -- This whole part is as flaky as it gets. In particular, we **only** reset the declarations, we don't do anything for possibly arbitrary other environment extensions. In particular, we do need to keep the `MatcherInfoExt` for predefinitions to elaborate correctly, so we hack around that particular part for now (TODO do better...)
-    let tempAxiomNames := mapHeaders.foldl (init := {}) fun acc {newName, ..} => acc.insert newName
-    let retainedRoots := collectExprConstants (mappedValues ++ mappedTypes)
-    let retainedDeclMap ← collectRetainedDecls oldEnv tempAxiomNames retainedRoots
-    let retainedDecls ← topoSortRetainedDecls retainedDeclMap
-    trace[Modular.Elab] "Retaining the following new declarations: {retainedDecls.map ConstantInfo.name}"
-    let matcherExts ← retainedDecls.mapM fun cinfo => getMatcherInfo? cinfo.name
-    trace[Modular.Elab] "Setting old env back"
-    setEnv oldEnv
-    replayRetainedDecls retainedDecls matcherExts
-    let mut predefs : Array PreDefinition:= #[]
-    for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
-      let predef := { ref := stx
-                      kind := cinfo.kind!
-                      levelParams := cinfo.levelParams
-                      modifiers := modifiers
-                      declName := newName
-                      binders := .missing
-                      type := mappedType
-                      value := mappedValue
-                      termination := if isAux then .none else termination_hint.rememberExtraParams 0 mappedValue}
-      predefs := predefs.push predef
-    trace[Modular.Elab] "Predefs : {predefs}"
-    addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
-    trace[Modular.Elab] "Predefs elaborated successfully"
+        trace[Modular.Elab] "Mapped values : {mappedValues}"
+        let matchExtensions ← getMatchExtensions
+        let matchMVars := matchExtensions.map MatchToExtend.mvar |> Std.HashSet.ofArray
+        let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
+        if matchExtensions.size != matchClauses.size then
+          throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
+        -- TODO do context renaming using `argNames`
+        for {matchName, mvar, originalMatch} in matchExtensions, {ref, name, alts, argNames} in matchClauses do
+          withRef ref do
+          let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
+          unless Name.mkSimple matchName = name do
+            throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
+          mvar.withContext do
+            trace[Modular.Elab] "originalMatch : {originalMatch}"
+            let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
+            trace[Modular.Elab] "matcherBundle generated"
+            let matcherBundle ← matcherBundle.modMap
+            trace[Modular.Elab] "matcherBundle modmapped"
+            trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
+            let newMatcherExpr ← Term.withDeclName newFunName do matcherBundle.mkMatcher alts
+            mvar.assign newMatcherExpr
+        -- We solve mvars generated by extended matches separately
+        mvars := mvars.filter (· ∉ matchMVars)
+        trace[Modular.Elab] "Mvars : {mvars.map Expr.mvar}"
+
+        if mvars.isEmpty  then
+          if tacs matches some (some _) then
+            throwError "Unexpected tactic block: the translation generated no obligations"
+        else
+          let some (some tac) := tacs
+            | throwError "Missing `where ... finally` block to solve the missing holes"
+          Term.withDeclName newFunName do solveGoalsWithTactic tac mvars
+        trace[Modular.Elab] "Tactics elaborated"
+        mappedValues.forM fun e => Meta.check e
+        Term.synthesizeSyntheticMVarsNoPostponing
+        mappedValues ← mappedValues.mapM instantiateMVars
+        let declsConsts := mapHeaders.map fun {cinfo, newName, ..} => mkConst newName (cinfo.levelParams.map Level.param)
+        mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
+        if mappedValues.any Expr.hasExprMVar then
+          throwError "`mod_def` generated unresolved metavariables"
+        addDeclarationRangesFromSyntax newFunName newFun
+        let mut predefs : Array PreDefinition:= #[]
+        for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
+          let predef := { ref := stx
+                          kind := cinfo.kind!
+                          levelParams := cinfo.levelParams
+                          modifiers := modifiers
+                          declName := newName
+                          binders := .missing
+                          type := mappedType
+                          value := mappedValue
+                          termination := if isAux then .none else termination_hint.rememberExtraParams 0 mappedValue}
+          predefs := predefs.push predef
+        trace[Modular.Elab] "Predefs : {predefs}"
+        addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
+        trace[Modular.Elab] "Predefs elaborated successfully"
+      -- Once all is done, we can leave the `withModifyMap` scope and add the correct mappings to the environment
+    for {cinfo, newName, isAux, type} in mapHeaders do
+        let newMapEntry := {
+          expr := mkConst newName (cinfo.levelParams.map Level.param)
+          levelParams := cinfo.levelParams
+          numArgs := 0
+          numHoles := 0}
+        addMapEntry newName newMapEntry
+
   | _ => throwUnsupportedSyntax
