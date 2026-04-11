@@ -158,7 +158,6 @@ meta def elabModDef : ModularElab := fun stx =>
         let mut mappedValues := #[]
         let mut mappedTypes := #[]
 
-        -- What follows from here is a horrible mess and should definitely be reworked to be more principled in the very near future..
         for {cinfo, newName, isAux, type} in mapHeaders do
           trace[Modular.Elab] "elaborating {newName}"
           let mut mappedValue ← modMapValueOrEqDef cinfo isAux
@@ -234,11 +233,11 @@ meta def elabModDef : ModularElab := fun stx =>
         trace[Modular.Elab] "Predefs elaborated successfully"
       -- All is done, we can leave the `withModifyMap` and `withLocalDeclsDND` scopes and add the correct mappings to the environment
     for {cinfo, newName, isAux, type} in mapHeaders do
-        let newMapEntry := {
-          expr := mkConst newName (cinfo.levelParams.map Level.param)
-          levelParams := cinfo.levelParams
-          numArgs := 0
-          numHoles := 0}
-        addMapEntry newName newMapEntry
+      let newMapEntry := {
+        expr := mkConst newName (cinfo.levelParams.map Level.param)
+        levelParams := cinfo.levelParams
+        numArgs := 0
+        numHoles := 0}
+      addMapEntry cinfo.name newMapEntry
 
   | _ => throwUnsupportedSyntax
