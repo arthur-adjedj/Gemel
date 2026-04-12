@@ -92,7 +92,7 @@ Actually, `DefView` contain the value as a syntax, not as an Expr, this is not i
 -/
 
 def modular_where_match_clause := leading_parser
-  Term.ident >> many Term.ident >> "with " >> checkColGt >> many Term.matchAlt
+  Term.ident >> many Term.binderIdent >> "with " >> checkColGt >> many Term.matchAlt
 
 structure MatchClause where
   ref  : Syntax
