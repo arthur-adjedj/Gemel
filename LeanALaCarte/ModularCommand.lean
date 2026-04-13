@@ -156,7 +156,9 @@ syntax (name := modular_run_command) command : modular_command
 @[modular_elab modular_run_command, incremental]
 def elabModularElabCommand : ModularElab := fun stx => do
   if stx.isOfKind ``modular_run_command then
-    StateT.lift <| elabCommand stx[0]
+    -- TODO figure out a way to keep the command diagnostics with incrementality enabled
+    withoutModularCommandIncrementality true do
+      StateT.lift <| elabCommand stx[0]
   else
     throwUnsupportedSyntax
 
