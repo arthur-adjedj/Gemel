@@ -139,6 +139,7 @@ meta def elabModDef : ModularElab := fun stx =>
       mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
     mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName false)
     let decls := mapHeaders.map fun {newName, type, ..} => (newName,type)
+    -- TODO these fvars currently 1. appear in the tactic context and 2. must be written fully (e.g `Foo.Bar` rather than just `Bar` or even swift-notation `.Bar`), this should be fixed by looking into how regular defs/theorems handle that
     withLocalDeclsDND decls fun xs => do
       let add_temp_mappings := Id.run do
         let mut mappings := []
