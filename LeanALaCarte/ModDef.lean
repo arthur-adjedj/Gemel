@@ -70,26 +70,25 @@ def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit :
 structure MappedHeader where
   cinfo : ConstantInfo
   newName : Name
+  shortNewName : Name
   isAux : Bool
   type : Expr
 deriving Inhabited
 
-def mkMappedDecl (oldName newName : Name) (isAux := true): ModularM MappedHeader := do
+def mkMappedDecl (oldName newName : Name) (shortNewName : Name := newName) (isAux := true): ModularM MappedHeader := do
   let cinfo ← getConstInfo oldName
   let type ← modMap cinfo.type
   assert! !type.hasMVar
-  return { cinfo, newName, isAux, type }
+  return { cinfo, newName, shortNewName, isAux, type }
 
-/- TODO adapt syntax to take into account:
-- docstrings
-- attributes
-- termination hints
-- `where` clauses
-- (maybe ?) make the current `by` goals be filled in as holes in `where finally` ? (this would be non-trivial in cases where the holes appear in auxiliary defs rather than the "real" one. One solution could be to inline/delta-reduce auxiliary defs that aren't matchers, and translating the core def directly, leaving the job of re-abstracting relevant parts of the code to the usual elaborator for `PreDef`s. The big danger to doing that is obviously performance. `modMap`ed terms need to be `check`ed to instantiate the type of the introduced mvars for now, and doing so on terms containing very large proof terms (e.g `grind` or `omega` proofs) is bound to be expensive. A solution would be to get rid of `Meta.check` in `modMap`, but I'm confident type-checking is still called a fair few times when elaborating PreDefs, so this doesn't solve the issue of abstracting the proofs at the right time.)
-
-Once that is all done, translate that syntax to a `DefView` and elaborate it like any other function, making use of all the niceties the lean elaborator offers :D
-Actually, `DefView` contain the value as a syntax, not as an Expr, this is not ideal because it implies needing to first delaborate the translated term before re-elaborating it.. Let's try to translate things directly to `PreDef`s instead, this will be a bit of a PITA...
--/
+def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr → ModularM α) : ModularM α :=
+  let rec loop (i : Nat) (fvars : Array Expr) := do
+    if h : i < decls.size then
+      let header := decls[i]
+      withAuxDecl header.newName header.type header.shortNewName fun fvar => loop (i+1) (fvars.push fvar)
+    else
+      k fvars
+  loop 0 #[]
 
 def modular_where_match_clause := leading_parser
   Term.ident >> many Term.binderIdent >> "with " >> checkColGt >> many Term.matchAlt
@@ -121,11 +120,15 @@ meta def elabModDef : ModularElab := fun stx =>
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
-    let newFunName := (← getCurrNamespace) ++ newFun.getId
+
     withRef stx do
     let oldFunCinfo ← getConstInfo oldFunName
     unless oldFunCinfo.hasValue do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
+    let expandedDeclId ← withRef newFun do
+      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams newFun modifiers
+    let newFunName := expandedDeclId.declName
+    let newShortName := expandedDeclId.shortName
     let unfoldEqn? ← getUnfoldEqnFor? oldFunName
     let extraMapNames ←
       if let some unfoldEqn := unfoldEqn? then
@@ -137,13 +140,11 @@ meta def elabModDef : ModularElab := fun stx =>
     for oldAuxName in extraMapNames do
       let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
       mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
-    mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName false)
-    let decls := mapHeaders.map fun {newName, type, ..} => (newName,type)
-    -- TODO these fvars currently 1. appear in the tactic context and 2. must be written fully (e.g `Foo.Bar` rather than just `Bar` or even swift-notation `.Bar`), this should be fixed by looking into how regular defs/theorems handle that
-    withLocalDeclsDND decls fun xs => do
+    mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName newShortName false)
+    withMappedHeadersDecls mapHeaders fun xs => do
       let add_temp_mappings := Id.run do
         let mut mappings := []
-        for {cinfo, newName, isAux, type} in mapHeaders, x in xs do
+        for {cinfo, newName, shortNewName, isAux, type} in mapHeaders, x in xs do
           -- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
           assert! cinfo.levelParams = oldFunCinfo.levelParams
           let newMapEntry := {
@@ -151,7 +152,7 @@ meta def elabModDef : ModularElab := fun stx =>
             levelParams := []
             numArgs := 0
             numHoles := 0}
-          mappings :=  (oldFunName.eraseMacroScopes,newMapEntry)::mappings
+          mappings :=  (oldFunName,newMapEntry)::mappings
         return (.insertMany · mappings)
       -- mapped values are constructed in a temp map that contains the declarations being currently defined
       withModifyMap add_temp_mappings do
@@ -159,7 +160,7 @@ meta def elabModDef : ModularElab := fun stx =>
         let mut mappedValues := #[]
         let mut mappedTypes := #[]
 
-        for {cinfo, newName, isAux, type} in mapHeaders do
+        for {cinfo, newName, shortNewName, isAux, type} in mapHeaders do
           trace[Modular.Elab] "elaborating {newName}"
           let mut mappedValue ← modMapValueOrEqDef cinfo isAux
           let newMvars ← getMVarsNoDelayed mappedValue
@@ -233,7 +234,7 @@ meta def elabModDef : ModularElab := fun stx =>
         addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
         trace[Modular.Elab] "Predefs elaborated successfully"
       -- All is done, we can leave the `withModifyMap` and `withLocalDeclsDND` scopes and add the correct mappings to the environment
-    for {cinfo, newName, isAux, type} in mapHeaders do
+    for {cinfo, newName, shortNewName, isAux, type} in mapHeaders do
       let newMapEntry := {
         expr := mkConst newName (cinfo.levelParams.map Level.param)
         levelParams := cinfo.levelParams

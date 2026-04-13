@@ -67,12 +67,11 @@ modular
 
     mod_def Natt.add'' extends Nat.add' where
     match_1 with
-    -- TODO see how `defs` handle the elaboration of the recursive calls so that e.g swift notation works on those
-      | Natt.succ' n => fun k => (ModDefTests.Natt.add'' n k).succ'
+      | Natt.succ' n => fun k => (n.add'' k).succ'
 
   mod_def Natt.add' extends Nat.add where
     match_1 with
-      | n, Natt.succ' k => (ModDefTests.Natt.add' n k).succ'
+      | n, Natt.succ' k => (n.add' k).succ'
   termination_by structural _ x => x
 
 modular
@@ -81,7 +80,7 @@ modular
 
   mod_def Vecc.append extends Vec.append where
     match_1 with
-      | Nat.succ _,Vecc.cons' hd tl => Vecc.cons' hd (ModDefTests.Vecc.append tl v₂)
+      | Nat.succ _,Vecc.cons' hd tl => Vecc.cons' hd (Vecc.append tl v₂)
 
 /--
 info: ModDefTests.Vecc.append {α : Type} {n k : Nat} (v₁ : Vecc α n) (v₂ : Vecc α k) : Vecc α (k.add n)
