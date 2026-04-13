@@ -25,7 +25,7 @@ def Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
   | _,.head => .head
   | _,.tail h => .tail (R _ h)
 
-def Ren.wk : Ren Γ (A::Γ) := fun _ h => .tail h
+def Ren.wk (A) : Ren Γ (A::Γ) := fun _ h => .tail h
 
 def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
   | var h => .var (R _ h)
@@ -90,21 +90,21 @@ modular
       | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
       | _, .app a b => .app (Term.wk R a) (Term.wk R b)
 
-  -- theorem Term.wk_wk : Term.wk
-
   mod_def Term.Subst extends NatExt.Subst
   mod_def Term.Subst.id extends NatExt.Subst.id
 
+  theorem Term.wk_wk {Γ : List LamTy} {h : Γ.Has A} : Term.wk (Ren.wk B) (Subst.id A h) = (Subst.id A h.tail) := rfl
+
   def Term.subst_ext (s : Term.Subst Γ Δ): Term.Subst (A::Γ) (A::Δ)
-    | _,.head => .var .head
-    | _,.tail h => Term.wk Ren.wk (s h)
+    | _ ,.head => .var .head
+    | _ ,.tail h => Term.wk (Ren.wk _) (s h)
 
   theorem Term.subst_ext_id : @Term.subst_ext Γ Γ A Term.Subst.id = Term.Subst.id := by
     funext _ h
     cases h
     · rfl
     · rw [subst_ext]
-      sorry
+      rfl
 
   def Term.subst_wk (a : Term Γ A) : Term.Subst (A::Γ) Γ
     | _,.head => a
