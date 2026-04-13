@@ -239,5 +239,13 @@ meta def elabModDef : ModularElab := fun stx =>
         numArgs := 0
         numHoles := 0}
       addMapEntry cinfo.name newMapEntry
+      -- TODO also add entry for `.eq_def` ?
+      let some oldEqns ← getEqnsFor? cinfo.name | continue
+      let some newEqns ← getEqnsFor? newName    | continue
+      trace[Modular.Elab] "oldEqns : {oldEqns}"
+      trace[Modular.Elab] "newEqns : {newEqns}"
+      for oldEqn in oldEqns, newEqn in newEqns do
+        addAuxMapping oldEqn newEqn
+
 
   | _ => throwUnsupportedSyntax
