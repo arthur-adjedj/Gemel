@@ -165,7 +165,6 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
   | `(modular_command|inductive $i $[$params]* extends $inds,* where $ctors*) => do
     Term.withAutoBoundImplicit do
     Term.elabBinders params fun declaredParams => do
-    let newIndName := i.getId --TODO this is wrong..? namespace handling is hard..
     let indExprs ← inds.getElems.mapM fun indStx => do
       let indExpr ← Term.elabTerm indStx none
       instantiateMVars indExpr
@@ -192,6 +191,11 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
     unless !type.hasMVar do
     -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
       throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
+    let expandedDeclId ← withRef? i do
+      Term.expandDeclId (← getCurrNamespace) indVals[0]!.levelParams i {}
+    let newIndName := expandedDeclId.declName
+    checkNotAlreadyDeclared newIndName
+    Term.withDeclName newIndName do
     let (numParams, addedConstrs) ←
       if declaredParams.size == 0 && baseNumParams > 0 then
         try
