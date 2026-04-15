@@ -47,7 +47,7 @@ def getEqDef? (n : Name) : MetaM (Option Expr) := do
     let_expr Eq _ _ rhs := e | unreachable!
     mkLambdaFVars xs rhs
 
-def modMapValueOrEqDef (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
+def modMapValueOrEqDefRhs (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
   let fallback _ := modMap cinfo.value!
   if isAux then fallback ()
   else
@@ -91,7 +91,7 @@ def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr →
   loop 0 #[]
 
 def modular_where_match_clause := leading_parser
-  Term.ident >> many Term.binderIdent >> "with " >> checkColGt >> many Term.matchAlt
+  "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> checkColGt >> many Term.matchAlt
 
 structure MatchClause where
   ref  : Syntax
@@ -100,13 +100,13 @@ structure MatchClause where
   alts : Array Term.TermMatchAltView
 
 def elabModularWhereMatch (stx : Syntax) : MatchClause :=
-  let name := stx[0].getId
-  let argNames := stx[1].getArgs.map Syntax.getId
-  let alts := stx[3].getArgs.filterMap (Term.getMatchAlt `term)
+  let name := stx[1].getId
+  let argNames := stx[2].getArgs.map Syntax.getId
+  let alts := stx[4].getArgs.filterMap (Term.getMatchAlt `term)
   { ref := stx, name, argNames, alts }
 
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" ident "extends" ident ("where " colGt modular_where_match_clause* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+  declModifiers "mod_def" ident "extends" ident ("where " colGt (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=
@@ -129,10 +129,9 @@ meta def elabModDef : ModularElab := fun stx =>
       Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams newFun modifiers
     let newFunName := expandedDeclId.declName
     let newShortName := expandedDeclId.shortName
-    let unfoldEqn? ← getUnfoldEqnFor? oldFunName
     let extraMapNames ←
-      if let some unfoldEqn := unfoldEqn? then
-        auxDefs unfoldEqn oldFunName
+      if let some e ← getEqDef? oldFunName then
+        e.auxDefs oldFunName
       else
         auxDefs oldFunName
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
@@ -142,27 +141,28 @@ meta def elabModDef : ModularElab := fun stx =>
       mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
     mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName newShortName false)
     withMappedHeadersDecls mapHeaders fun xs => do
-      let add_temp_mappings := Id.run do
+      let add_temp_mappings (map : ModularMap):= do
         let mut mappings := []
         for {cinfo, newName, shortNewName, isAux, type} in mapHeaders, x in xs do
           -- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
-          assert! cinfo.levelParams = oldFunCinfo.levelParams
+          unless cinfo.levelParams = oldFunCinfo.levelParams do
+            throwError s!"Unexpected: Unable to abstract auxiliary function {cinfo.name}: the original declaration has different level parameters ({cinfo.levelParams}) compared to {oldFunCinfo.name} (oldFunCinfo.levelParams)"
           let newMapEntry := {
             expr := x
             levelParams := []
             numArgs := 0
             numHoles := 0}
           mappings :=  (oldFunName,newMapEntry)::mappings
-        return (.insertMany · mappings)
+        return map.insertMany mappings
       -- mapped values are constructed in a temp map that contains the declarations being currently defined
-      withModifyMap add_temp_mappings do
+      withSetMap (← add_temp_mappings (← getMap)) do
         let mut mvars := []
         let mut mappedValues := #[]
         let mut mappedTypes := #[]
 
         for {cinfo, newName, shortNewName, isAux, type} in mapHeaders do
           trace[Modular.Elab] "elaborating {newName}"
-          let mut mappedValue ← modMapValueOrEqDef cinfo isAux
+          let mut mappedValue ← modMapValueOrEqDefRhs cinfo isAux
           let newMvars ← getMVarsNoDelayed mappedValue
           mvars := newMvars.toList ++ mvars
           mappedValues := mappedValues.push mappedValue
@@ -182,6 +182,7 @@ meta def elabModDef : ModularElab := fun stx =>
         -- TODO do context renaming using `argNames`
         for {matchName, mvar, originalMatch} in matchExtensions, {ref, name, alts, argNames} in matchClauses do
           withRef ref do
+          trace[Modular.Elab] "Elaborating matcher : {name}"
           let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
           unless Name.mkSimple matchName = name do
             throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"

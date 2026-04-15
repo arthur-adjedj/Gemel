@@ -87,7 +87,8 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
     trace[Modular.Match] "matchType: {matchType}"
-    let (discrs, matchType, alts, _) ← elabMatchAltViews true oldDiscrs matchType matchAlts --TODO allow generalisations ?
+    -- We disallow generalisations for now here, namely because it makes the task of figuring out how to update the old alts much more complex, since new patterns may be added to either the beginning (for new indices) or the right (for generalizations) of the old patterns. This is certainly managable in practice, just not a priority for now.
+    let (discrs, matchType, alts, _) ← elabMatchAltViews false oldDiscrs matchType matchAlts
     trace[Modular.Match] "alts elaborated"
     synthesizeSyntheticMVarsUsingDefault
     let rhss := alts.map Prod.snd

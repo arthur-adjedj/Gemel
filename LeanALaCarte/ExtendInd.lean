@@ -206,6 +206,15 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
 def mkSizeOfName (name : Name) : Name :=
   name ++ `_sizeOf_inst
 
+def mkCtorElimTypeName (indName : Name) : Name :=
+  Name.str indName "ctorElimType"
+
+def mkNoConfusionTypeName (indName : Name) : Name :=
+  Name.str indName "noConfusionType"
+
+def mkNoConfusionName (indName : Name) : Name :=
+  Name.str indName "noConfusionType"
+
 def mkAuxMappingIfValid (oldName newName : Name) : ModularM Unit := do
   let env ← getEnv
   if env.contains oldName && env.contains newName then
@@ -259,7 +268,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
       numHoles := numExtraMinors
     }
     modifyMap (·.insert oldRecName.eraseMacroScopes recExt)
-    let mkAuxNames := [mkRecOnName, mkCasesOnName, mkBelowName, mkBRecOnName, mkSizeOfName]
+    let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
     mkAuxMappings mkAuxNames indName newIndName
 
 @[modular_elab modular_inductive, incremental]
