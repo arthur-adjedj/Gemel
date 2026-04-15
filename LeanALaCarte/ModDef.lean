@@ -106,7 +106,7 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   { ref := stx, name, argNames, alts }
 
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" ident "extends" ident ("where " colGt (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+  declModifiers "mod_def" (ident)? "extends" ident ("where " colGt (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=
@@ -115,7 +115,7 @@ instance : ToMessageData PreDefinition where
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $newFun extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
+  | `(modular_command| $mod:declModifiers mod_def $[$newFun]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
     let modifiers ← elabModifiers mod
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
@@ -125,9 +125,10 @@ meta def elabModDef : ModularElab := fun stx =>
     let oldFunCinfo ← getConstInfo oldFunName
     unless oldFunCinfo.hasValue do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
-    let expandedDeclId ← withRef newFun do
-      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams newFun modifiers
+    let expandedDeclId ← withRef? newFun do
+      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams (newFun.getD oldFun) modifiers
     let newFunName := expandedDeclId.declName
+    checkNotAlreadyDeclared newFunName
     let newShortName := expandedDeclId.shortName
     let extraMapNames ←
       if let some e ← getEqDef? oldFunName then
@@ -216,7 +217,7 @@ meta def elabModDef : ModularElab := fun stx =>
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod_def` generated unresolved metavariables"
-        addDeclarationRangesFromSyntax newFunName newFun
+        newFun.forM (fun name => addDeclarationRangesFromSyntax newFunName name)
 
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         let mut predefs : Array PreDefinition:= #[]
