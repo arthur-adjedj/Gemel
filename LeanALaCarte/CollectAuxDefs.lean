@@ -55,7 +55,6 @@ where
         visit depsOnName
     modify fun (set,res) => (set.erase n, n::res)
 
-@[deprecated "TODO do NOT rely on this function in the future. Since we use `.eq_def`s to elaborate functions now, there can indeed cycles in the declarations (e.g with mutual definitions), and this does not handle such cycles." (since := "recently") ]
 def auxDefs (n : Name) : MetaM (List Name) := do
   let (_,s) ← collectAuxDefs n |>.run {}
   return topoAuxDefs s
@@ -76,6 +75,7 @@ partial def Lean.Expr.collectAuxDefs (cname : Name) (e : Expr) (root : Name := c
         map.insert name (NameSet.insert {} cname)
     _root_.collectAuxDefs name root
 
+@[deprecated "TODO do NOT rely on this function in the future. Since we use `.eq_def`s to elaborate functions now, there can indeed cycles in the declarations (e.g with mutual definitions), and this does not handle such cycles." (since := "recently") ]
 def Lean.Expr.auxDefs (n : Name) (e : Expr) : MetaM (List Name) := do
   let (_,s) ← collectAuxDefs n e |>.run {}
   return topoAuxDefs s
