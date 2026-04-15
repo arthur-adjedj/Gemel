@@ -52,14 +52,15 @@ partial def Lean.Meta.Match.Pattern.modMap : Pattern → ModularM Pattern
   | Pattern.val e               => return Pattern.val (← _root_.modMap e)
   | Pattern.ctor n us ps fields => do
     -- TODO sanitize modmap extension API to make sure constructors are never extended by something other than a constructor
-    let some {expr := Expr.const k _,..} := (← getMap)[n]? | unreachable! --TODO better fallback
+    let k := if let some {expr := Expr.const k _,..} := (← getMap)[n]? then k else n
     return Pattern.ctor k us (← ps.mapM _root_.modMap) (← fields.mapM modMap)
   | Pattern.as x p h            => return Pattern.as x (← p.modMap) h
   | Pattern.arrayLit t xs       => return Pattern.arrayLit (← _root_.modMap t) (← xs.mapM modMap)
   | p                   => return p
 
-def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
-  let {discrs, matchType, lhss, rhss} := m
+def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM MatcherBundle := do
+  let {discrs, matchType, lhss, ..} := m
+  -- We discard the previous rhss here since we have already modmapped them and stored in the match extension. The reason we need to do that is that if these are not modmapped early, there is no easy way to know if the rhs might contain new matchers that need extension as well
   let discrs ← discrs.mapM fun ⟨expr, h?⟩ => do return ⟨← _root_.modMap expr, h?⟩
   trace[Modular.Match] "translated discrs : {discrs.map Discr.expr}"
   trace[Modular.Match] "old matchType : {matchType}"
@@ -75,9 +76,9 @@ def MatcherBundle.modMap (m : MatcherBundle) : ModularM MatcherBundle := do
     trace[Modular.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
     return {ref, fvarDecls, patterns : AltLHS}
   trace[Modular.Match] "lhss translated"
-  let rhss ← rhss.mapM _root_.modMap
-  trace[Modular.Match] "rhss translated"
-  return {discrs, matchType, lhss, rhss : MatcherBundle}
+  -- let rhss ← rhss.mapM _root_.modMap
+  -- trace[Modular.Match] "rhss translated"
+  return {discrs, matchType, lhss, rhss := newRhss : MatcherBundle}
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
   let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m

@@ -41,20 +41,24 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     trace[Modular.Subst] "matcher {fnName} detected"
     let mvarLCtx ← getLCtx
     forallTelescopeReducing (← inferType fn) fun xs _ => do
-      let discrs_ty_hds ← xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs].toArray.mapM (inferType · >>= (fun e => whnf e) >>= pure ∘ Expr.getAppFn)
-      trace[Modular.Subst] "discrs_ty_hds : {discrs_ty_hds}"
-      -- If one of the discriminants is an extended type, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
-      for hd in discrs_ty_hds do
-        let some ⟨hd_name,_⟩ := hd.const? |
-          throwError "That's unexpected, expected a function head, found {hd}"
-        if (← getMap).contains hd_name then
-          let mvar_ty ← withLCtx' mvarLCtx (inferType e >>= modMapAux)
+      let discrs_fvars := xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs]
+      trace[Modular.Subst] "discrs_fvars : {discrs_fvars}"
+      -- If one of the discriminants changes from translation, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
+      -- TODO for matches that don't need new arms, the current setup still asks user to write `matcher match_i with` with no new alts. Ideally, we should attempt to translate such "obvious" matches automatically, either here or in `ModDef`
+      for hd_fvar in discrs_fvars do
+        let ty ← inferType hd_fvar
+        let mod_ty ← modMapAux ty
+        if ty != mod_ty then
+          -- We must compute the modmapped rhss early to report of any potential matchers needing extension
+          let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
+          let mvar_ty ← withLCtx' mvarLCtx do modMapAux (← inferType e)
           trace[Modular.Subst] "new matcher type : {mvar_ty}"
-          let mvar ← withLCtx' mvarLCtx <| mkFreshExprMVar mvar_ty .syntheticOpaque
+          let mvar ← withLCtx' mvarLCtx do mkFreshExprMVar mvar_ty .synthetic --is this enough ?
           trace[Modular.Subst] "matcher mvar : {mvar}"
           addMatchExtension { matchName := fnName
                               mvar := mvar.mvarId!
-                              originalMatch := e }
+                              originalMatch := e
+                              modMappedRhss := rhss }
           return mvar
       fallback ()
   else
@@ -90,7 +94,7 @@ where
       forallTelescope    e fun xs e => withmodMappedLctx xs  do
         let newe ← modMapAux e
         mkForallFVars xs newe
-    | .mdata _ e => modMapAux e
+    | .mdata m e => return .mdata m (← modMapAux e)
     | _ => unreachable!
 
   withmodMappedLctx {α} (xs : Array Expr) (k : ModularM α) : ModularM α := do

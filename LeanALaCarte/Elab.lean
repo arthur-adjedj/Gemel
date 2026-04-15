@@ -33,6 +33,7 @@ structure MatchToExtend where
   matchName : Name
   mvar : MVarId
   originalMatch : Expr
+  modMappedRhss : Array Expr
 
 structure ModularState where
   map : ModularMap := {}
