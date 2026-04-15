@@ -86,9 +86,8 @@ modular
     | const : Nat → NatExt Γ .nat
     | plus : NatExt Γ .nat → NatExt Γ .nat → NatExt Γ .nat
 
-
   mod_def NatExt.wk extends Var.wk where
-    match_1 R with
+    matcher match_1 R with
       | .const a => .const a
       | .plus a b => .plus (NatExt.wk R a) (NatExt.wk R b)
 
@@ -102,7 +101,7 @@ modular
   mod_def NatExt.Subst extends Var.Subst
 
   mod_def NatExt.subst extends Var.subst where
-    match_1 s with
+    matcher match_1 s with
       | .const a => .const a
       | .plus a b => .plus (NatExt.subst s a) (NatExt.subst s b)
 
@@ -136,7 +135,7 @@ modular
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
   mod_def Term.wk extends NatExt.wk where
-    match_1 with
+    matcher match_1 with
       | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
       | _, .app a b => .app (Term.wk R a) (Term.wk R b)
 
@@ -163,12 +162,13 @@ modular
     · rfl
     · rw [subst_ext]
       rfl
+
   def Term.subst_wk (a : Term Γ A) : Term.Subst Γ (A::Γ)
     | _,.head => a
     | _,.tail h => .var h
 
   mod_def Term.subst extends NatExt.subst where
-    match_1 with
+    matcher match_1 with
       | _, .lam f => .lam (Term.subst (Term.subst_ext s _) f)
       | _, .app a b => .app (Term.subst s a) (Term.subst s b)
 

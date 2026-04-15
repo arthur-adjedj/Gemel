@@ -48,7 +48,7 @@ def getEqDef? (n : Name) : MetaM (Option Expr) := do
     mkLambdaFVars xs rhs
 
 def modMapValueOrEqDefRhs (cinfo : ConstantInfo) (isAux : Bool) : ModularM Expr := do
-  let fallback _ := modMap cinfo.value!
+  let fallback _ := modMap (cinfo.value! (allowOpaque := true))
   if isAux then fallback ()
   else
     let some value ← getEqDef? cinfo.name | fallback ()
@@ -120,10 +120,9 @@ meta def elabModDef : ModularElab := fun stx =>
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
-
     withRef stx do
     let oldFunCinfo ← getConstInfo oldFunName
-    unless oldFunCinfo.hasValue do
+    unless oldFunCinfo.hasValue (allowOpaque := true) do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
     let expandedDeclId ← withRef? newFun do
       Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams (newFun.getD oldFun) modifiers
@@ -217,12 +216,12 @@ meta def elabModDef : ModularElab := fun stx =>
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod_def` generated unresolved metavariables"
-        newFun.forM (fun name => addDeclarationRangesFromSyntax newFunName name)
+        newFun.forM (fun name => addDeclarationRangesFromSyntax newFunName name name)
 
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         let mut predefs : Array PreDefinition:= #[]
         for {cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
-          let predef := { ref := stx
+          let predef := { ref := if isAux then .missing else newFun.getD ⟨.missing⟩
                           kind := cinfo.kind!
                           levelParams := cinfo.levelParams
                           modifiers := modifiers

@@ -1,10 +1,9 @@
-module
 
-public import LeanALaCarte.ModDef
-public import LeanALaCarte.ExtendInd
-public import LeanALaCarte.CheckTranslation
-public import LeanALaCarte.ModularCommand
-public import Lean
+import LeanALaCarte.ModDef
+import LeanALaCarte.ExtendInd
+import LeanALaCarte.CheckTranslation
+import LeanALaCarte.ModularCommand
+import Lean
 
 open Lean Elab Command Meta
 public section
@@ -60,17 +59,17 @@ modular
   inductive Natt extends Nat where
     | succ' : Natt → Natt
 
-   def Natt.add : Natt → Natt → Natt := fun n x => match x with
+  def Natt.add : Natt → Natt → Natt := fun n x => match x with
       | .zero => .zero
       | .succ x  => Natt.add n x |>.succ
       | .succ' x => Natt.add n x |>.succ'
 
-    mod_def Natt.add'' extends Nat.add' where
-    match_1 with
+  mod_def Natt.add'' extends Nat.add' where
+    matcher match_1 with
       | Natt.succ' n => fun k => (n.add'' k).succ'
 
   mod_def Natt.add' extends Nat.add where
-    match_1 with
+    matcher match_1 with
       | n, Natt.succ' k => (n.add' k).succ'
   termination_by structural _ x => x
 
@@ -79,7 +78,7 @@ modular
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
   mod_def Vecc.append extends Vec.append where
-    match_1 with
+    matcher match_1 with
       | Nat.succ _,Vecc.cons' hd tl => Vecc.cons' hd (Vecc.append tl v₂)
 
 /--

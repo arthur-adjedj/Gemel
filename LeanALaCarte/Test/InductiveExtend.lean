@@ -65,8 +65,8 @@ modular
 
 modular
 
-  /-- info: Natt'.succ' : Natt' → Natt' -/
-  #guard_msgs in
+  /-- info: test2.Natt'.succ' : Natt' → Natt' -/
+#guard_msgs in
   #check Natt'.succ'
 
 modular
@@ -114,16 +114,16 @@ modular
     | lam : Term' α → Term' α
     | app : Term' α → Term' α → Term' α
 
-/-- info: Term' (α : Type) : Type -/
+/-- info: test4.Term' (α : Type) : Type -/
 #guard_msgs in
 #check Term'
-/-- info: Term'.var {α : Type} : α → Term' α -/
+/-- info: test4.Term'.var {α : Type} : α → Term' α -/
 #guard_msgs in
 #check Term'.var
-/-- info: Term'.lam {α : Type} : Term' α → Term' α -/
+/-- info: test4.Term'.lam {α : Type} : Term' α → Term' α -/
 #guard_msgs in
 #check Term'.lam
-/-- info: Term'.app {α : Type} : Term' α → Term' α → Term' α -/
+/-- info: test4.Term'.app {α : Type} : Term' α → Term' α → Term' α -/
 #guard_msgs in
 #check Term'.app
 end test4

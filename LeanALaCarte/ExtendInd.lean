@@ -117,7 +117,7 @@ partial def checkParamOccs (indFVars : Array Expr) (params : Array Expr) (ctorTy
   visit ctorType
   return ctorType
 
-def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (params : Array Expr) (newIndName : Name): TermElabM Expr := do
+def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (params : Array Expr): TermElabM Expr := do
   match type? with
   | none => do
     let indFamily ← isInductiveFamily params.size indFVar
@@ -131,14 +131,14 @@ def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (par
     let type ← checkParamOccs #[indFVar] params type
     forallTelescopeReducing type fun _ resultingType => do
       unless resultingType.getAppFn == indFVar do
-        throwError m!"Unexpected resulting type{indentExpr resultingType}\nExpected an application of `{newIndName}`"
+        throwError m!"Unexpected resulting type{indentExpr resultingType}\nExpected an application of `{indFVar}`"
       unless (← isType resultingType) do
         throwError m!"Unexpected resulting term{indentExpr resultingType}\nThe constructor `{ctorName}` must return a type"
     return type
 
-def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
+def elabExtendedCtors (newShortIndName newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
   (ctors : Array Syntax) : TermElabM (Array Constructor) :=
-  withLocalDeclD newIndName indType fun indFVar => do
+  withAuxDecl newShortIndName indType newIndName fun indFVar => do
     let newIndConst := mkConst newIndName (newLevelParams.map .param)
     forallBoundedTelescope indType numParams fun params _ => withExplicitToImplicit params do
     ctors.mapM fun ctorStx => withRef ctorStx do
@@ -146,7 +146,7 @@ def elabExtendedCtors (newIndName : Name) (newLevelParams : List Name) (indType 
       let ctorName := ctorStx.getIdAt 3
       Term.withAutoBoundImplicit <|
         Term.elabBinders binders.getArgs fun ctorParams => do
-          let type ← elabCtorType type? indFVar ctorName params newIndName
+          let type ← elabCtorType type? indFVar ctorName params
           Term.synthesizeSyntheticMVarsNoPostponing
           let ctorParams ← Term.addAutoBoundImplicits ctorParams (ctorStx[3].getTailPos? (canonicalOnly := true))
           let except (mvarId : MVarId) := ctorParams.any fun ctorParam => ctorParam.isMVar && ctorParam.mvarId! == mvarId
@@ -193,17 +193,19 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
       throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
     let expandedDeclId ← withRef? i do
       Term.expandDeclId (← getCurrNamespace) indVals[0]!.levelParams i {}
+    let newShortIndName := expandedDeclId.shortName
     let newIndName := expandedDeclId.declName
     checkNotAlreadyDeclared newIndName
     Term.withDeclName newIndName do
+    Term.withoutSavingRecAppSyntax do
     let (numParams, addedConstrs) ←
       if declaredParams.size == 0 && baseNumParams > 0 then
         try
-          pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
+          pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
         catch _ =>
-          pure (0, (← elabExtendedCtors newIndName levelParams type 0 ctors))
+          pure (0, (← elabExtendedCtors newShortIndName newIndName levelParams type 0 ctors))
       else
-        pure (defaultNumParams, (← elabExtendedCtors newIndName levelParams type defaultNumParams ctors))
+        pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
     return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
   | _ => throwUnsupportedSyntax
 
@@ -275,6 +277,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
     mkAuxMappings mkAuxNames indName newIndName
 
+-- TODO add `addTermInfo'` for inductive/ctor names
 @[modular_elab modular_inductive, incremental]
 meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let extendedInd ← elabExtendedInd (← getMap) stx
