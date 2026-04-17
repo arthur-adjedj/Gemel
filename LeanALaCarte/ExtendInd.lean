@@ -67,11 +67,6 @@ def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
         ctors := inheritedCtors ++ addedCtors.toList
       }
 
-/- TODO
-  - Make syntax for inductive extension
-  - Add translation of ind type, ind constrs and ind recursors to the modular map
-  - Experiment with adding translation for auxiliary defs too
--/
 def isInductiveFamily (numParams : Nat) (indFVar : Expr) : TermElabM Bool := do
   let indFVarType ← inferType indFVar
   forallTelescopeReducing indFVarType fun xs _ =>

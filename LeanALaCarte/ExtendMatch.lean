@@ -20,7 +20,6 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   -- Check that this is a matcher, and then set up overapplication.
   let Expr.const c us := fn | return none
   let some info ← getMatcherInfo? c | return none
-  -- TODO handle overapplication.
   assert! args.size >= info.arity
   let matchType ←  lambdaTelescope args[info.getMotivePos]! fun xs t => mkForallFVars xs t
   -- First pass visiting the match application. Incrementally fills `AppMatchState`,
