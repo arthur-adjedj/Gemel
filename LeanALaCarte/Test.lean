@@ -1,4 +1,3 @@
-module
-
--- public import LeanALaCarte.Test.InductiveExtend
--- public import LeanALaCarte.Test.ModDef
+import LeanALaCarte.Test.InductiveExtend
+import LeanALaCarte.Test.ModDef
+import LeanALaCarte.Test.STLC

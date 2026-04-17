@@ -49,12 +49,13 @@ partial def modMapAux (e : Expr): ModularM Expr := do
         let ty ← inferType hd_fvar
         let mod_ty ← modMapAux ty
         if ty != mod_ty then
+          let mvar ← withLCtx' mvarLCtx do
+            let mvar_ty ← modMapAux (← inferType e)
+            trace[Modular.Subst] "new matcher type : {mvar_ty}"
+            mkFreshExprMVar mvar_ty .syntheticOpaque --is this enough ?
+          trace[Modular.Subst] "matcher mvar : {mvar}"
           -- We must compute the modmapped rhss early to report of any potential matchers needing extension
           let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
-          let mvar_ty ← withLCtx' mvarLCtx do modMapAux (← inferType e)
-          trace[Modular.Subst] "new matcher type : {mvar_ty}"
-          let mvar ← withLCtx' mvarLCtx do mkFreshExprMVar mvar_ty .synthetic --is this enough ?
-          trace[Modular.Subst] "matcher mvar : {mvar}"
           addMatchExtension { matchName := fnName
                               mvar := mvar.mvarId!
                               originalMatch := e
