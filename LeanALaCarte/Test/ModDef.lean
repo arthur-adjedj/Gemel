@@ -69,8 +69,8 @@ modular
       | Natt.succ' n => fun k => (Natt.add'' n k).succ'
 
   mod_def Natt.add' extends Nat.add where
-    matcher match_1 with
-      | n, Natt.succ' k => (Natt.add' n k).succ'
+    matcher match_1 n k with
+      | _, Natt.succ' k => (Natt.add' n k).succ'
   termination_by structural _ x => x
 
 modular

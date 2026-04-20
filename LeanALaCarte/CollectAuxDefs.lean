@@ -60,14 +60,12 @@ def auxDefs (n : Name) : MetaM (List Name) := do
   return topoAuxDefs s
 
 partial def Lean.Expr.collectAuxDefs (cname : Name) (e : Expr) (root : Name := cname) : StateRefT S MetaM Unit := do
-  -- modify fun map => if map.contains cname then map else map.insert cname {}
   let names := e.foldConsts (init := {}) (flip NameSet.insert)
   trace[Modular.Elab] "Expr.collectAuxDefs {e} (root: {root}): {names.toArray}"
   for name in names do
     -- matchers get abstracted away, so we shouldn't add them as functions to be translated
     unless name.isAuxDeclOf root && !name.isMatcher do
       continue
-    -- unless name.isMatcher do
     modify fun map =>
       if map.contains name then
         map.modify name (·.insert cname)
