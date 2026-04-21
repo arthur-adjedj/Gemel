@@ -33,16 +33,23 @@ structure MatchToExtend where
   matchName : Name
   mvar : MVarId
   originalMatch : Expr
+  originalLCtx : LocalContext
   modMappedRhss : Array Expr
 
-structure ModularState where
+structure ModularElabState where
   map : ModularMap := {}
+
+structure ModularState extends ModularElabState where
   matchesToExtend : Array MatchToExtend := #[]
 
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
   modifyMap : (ModularMap → ModularMap) → m Unit
 export MonadModular (getMap modifyMap)
+
+class MonadModMappedLCtx (m) [Monad m] where
+  getModMappedLCtx : m LocalContext
+export MonadModMappedLCtx (getModMappedLCtx)
 
 def addMapEntry [Monad m] [MonadModular m] (name : Name) (ext : ModularExtension) : m Unit :=
   modifyMap fun m => m.insert name ext
@@ -66,13 +73,25 @@ def withSetMap [Monad m] [MonadModular m] (map : ModularMap) (k : m α) : m α :
   setMap oldMap
   return res
 
+def withModMappedLCtx [Monad m] [MonadModMappedLCtx m] [MonadControlT MetaM m] (k : m α) : m α := do
+  let modMappedLCtx ← getModMappedLCtx
+  withLCtx' modMappedLCtx do
+    k
+
 instance [Monad m] : MonadModular (StateT ModularState m) where
-  getMap := get >>= pure ∘ ModularState.map
+  getMap := get >>= pure ∘ (·.map)
   modifyMap f := modify fun m =>  {m with map := f m.map}
 
-instance [Monad m] : MonadModular (StateT ModularMap m) where
-  getMap := get
-  modifyMap f := modify f
+instance [Monad m] : MonadModular (StateT ModularElabState m) where
+  getMap := get >>= pure ∘ (·.map)
+  modifyMap f := modify fun m =>  {m with map := f m.map}
+
+instance [Monad m] [MonadModular m] : MonadModular (ReaderT ρ m) where
+  getMap _ := getMap
+  modifyMap f _ := modifyMap f
+
+instance [Monad m] : MonadModMappedLCtx (ReaderT LocalContext m) where
+  getModMappedLCtx := read
 
 class MonadMatchExt (m) [Monad m] where
   addMatchExtension : MatchToExtend → m Unit
@@ -83,17 +102,21 @@ instance [Monad m] : MonadMatchExt (StateT ModularState m) where
   addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}
   getMatchExtensions := get >>= pure ∘ ModularState.matchesToExtend
 
-abbrev ModularM := StateT ModularState TermElabM
-abbrev ModularElabM := StateT ModularMap CommandElabM
+instance [Monad m] [MonadMatchExt m] : MonadMatchExt (ReaderT ρ m) where
+  addMatchExtension ext _ := addMatchExtension ext
+  getMatchExtensions _ := getMatchExtensions
+
+abbrev ModularM := ReaderT LocalContext $ StateT ModularState TermElabM
+abbrev ModularElabM := ReaderT LocalContext $ StateT ModularElabState CommandElabM
 
 /- Warning: the function drops any potential match extension information. If you want to use this information later, use `withLiftModularM` -/
-def liftModularM (k : ModularM α) : ModularElabM α := fun map => do
-  let (res,state) ← liftTermElabM (k ⟨map,#[]⟩)
-  return (res,state.map)
+def liftModularM (k : ModularM α) : ModularElabM α := fun lctx map => do
+  let (res,state) ← liftTermElabM (k lctx ⟨map,#[]⟩)
+  return (res,state.toModularElabState)
 
-def withLiftModularM (k : ModularM Unit) (k' : Array MatchToExtend → ModularElabM α) : ModularElabM α := fun map => do
-  let (_,state) ← liftTermElabM (k ⟨map,#[]⟩)
-  k' state.matchesToExtend |>.run state.map
+def withLiftModularM (k : ModularM Unit) (k' : Array MatchToExtend → ModularElabM α) : ModularElabM α := fun lctx map => do
+  let (_,state) ← liftTermElabM (k lctx ⟨map,#[]⟩)
+  k' state.matchesToExtend |>.run lctx state.toModularElabState
 
 public meta section
 
@@ -133,19 +156,19 @@ Disables incremental command reuse *and* reporting for `act` if `cond` is true b
 `Context.snap?` to `none`.
 -/
 def withoutModularCommandIncrementality (cond : Bool) (act : ModularElabM α) : ModularElabM α := do
-  let opts ← StateT.lift getOptions
+  let opts ← getOptions
   -- Cancel old elaboration when discarding it (for commands without incrementality support)
   if cond then
-    if let some old := (← read).snap?.bind (·.old?) then
-      StateT.lift <| old.val.cancelRec
-  withReader (fun ctx => { ctx with snap? := ctx.snap?.filter fun snap => Id.run do
+    if let some old := (← readThe Command.Context).snap?.bind (·.old?) then
+      old.val.cancelRec
+  withTheReader Command.Context (fun ctx => { ctx with snap? := ctx.snap?.filter fun snap => Id.run do
     if let some old := snap.old? then
       if cond && opts.getBool `trace.Elab.reuse then
         dbg_trace "reuse stopped: guard failed at {old.stx}"
     return !cond
   }) act
 
-def elabModularCommandUsing (s : ModularMap) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
+def elabModularCommandUsing (s : ModularElabState) (stx : Syntax) : List (KeyedDeclsAttribute.AttributeEntry ModularElab) → ModularElabM Unit
   | []                =>
     withInfoTreeContext
       (mkInfoTree := fun trees =>
@@ -215,7 +238,7 @@ structure ModularBlockSnapshot extends Snapshot where
   /-- Input modular commands. -/
   cmds : Array Syntax
   /-- Command state and modular map after each corresponding modular command. -/
-  outputs : Array (Command.State × ModularMap)
+  outputs : Array (Command.State × ModularElabState)
 deriving TypeName
 
 open Language in
@@ -235,8 +258,8 @@ def elabModularBlock : CommandElab := fun stx => do
       if snap.old?.isSome && oldSnap?.isNone then
         snap.old?.forM (·.val.cancelRec)
       let opts ← getOptions
-      let mut map : ModularMap := {}
-      let mut outputs : Array (Command.State × ModularMap) := #[]
+      let mut map : ModularElabState := {}
+      let mut outputs : Array (Command.State × ModularElabState) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
       let mut reusedPrefix := true
@@ -252,12 +275,12 @@ def elabModularBlock : CommandElab := fun stx => do
             outputs := outputs.push (oldState, oldMap)
           | none =>
             reusedPrefix := false
-            let (_, newMap) ← elabModularCommand cmd |>.run map
+            let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
             map := newMap
             outputs := outputs.push ((← get), map)
         else
           reusedPrefix := false
-          let (_, newMap) ← elabModularCommand cmd |>.run map
+          let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
           map := newMap
           outputs := outputs.push ((← get), map)
       snap.new.resolve <| .ofTyped {
@@ -267,7 +290,7 @@ def elabModularBlock : CommandElab := fun stx => do
         : ModularBlockSnapshot
       }
     else
-      let _ ← elabModularCommands m |>.run {}
+      let _ ← elabModularCommands m |>.run {} |>.run {}
   | _ => throwUnsupportedSyntax
 
 initialize

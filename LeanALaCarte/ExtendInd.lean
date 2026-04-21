@@ -24,6 +24,7 @@ structure ExtendedInd where
   newIndName : Name
   numParams : Nat
   levelParams : List Name
+  origType : Expr
   type : Expr
   /-We ideally want extensions to extend arbitrary inductives family instantiations , not just the base case, e.g consider cases like:`inductive Foo (A) extends Prod A A where ...`.
   (Instantiating type parameters of the extended types here makes sense to me, instantiating indices not so much.)
@@ -35,7 +36,10 @@ def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
   let indVals ← e.indNames.mapM getConstInfoInduct
   let inheritedCtors ← indVals.foldlM (init := []) fun acc indVal => do
     return (← indVal.ctors.mapM getConstInfoCtor) ++ acc
-  withLocalDeclD e.newIndName e.type fun newIndFVar => do
+  withLocalDeclD e.newIndName e.origType fun newIndFVar => do
+    let .cdecl i fvarId u _ bi k := (← getLCtx).get! newIndFVar.fvarId! | unreachable!
+    let mappedDecl := .cdecl i fvarId u e.type bi k
+    withReader (fun lctx => lctx.addDecl mappedDecl) do
     let tempIndExt : ModularExtension := {
       expr := newIndFVar
       levelParams := []
@@ -133,7 +137,7 @@ def elabCtorType (type? : Option Syntax) (indFVar : Expr) (ctorName : Name) (par
 
 def elabExtendedCtors (newShortIndName newIndName : Name) (newLevelParams : List Name) (indType : Expr) (numParams : Nat)
   (ctors : Array Syntax) : TermElabM (Array Constructor) :=
-  withAuxDecl newShortIndName indType newIndName fun indFVar => do
+  withAuxDecl newIndName indType newShortIndName fun indFVar => do
     let newIndConst := mkConst newIndName (newLevelParams.map .param)
     forallBoundedTelescope indType numParams fun params _ => withExplicitToImplicit params do
     ctors.mapM fun ctorStx => withRef ctorStx do
@@ -169,8 +173,8 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
         | throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
       indNames := indNames.push indName.eraseMacroScopes
     let indVals ← indNames.mapM getConstInfoInduct
-    let {levelParams, type := type0, numParams := baseNumParams,  ..} := indVals[0]!
-    unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type type0) do
+    let {levelParams, type := origType, numParams := baseNumParams,  ..} := indVals[0]!
+    unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type origType) do
       throwError "invalid types between inductives being extended"
     unless declaredParams.size <= baseNumParams do
       throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
@@ -182,7 +186,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
         unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
           throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
     let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
-    let (type,_) ← modMap type0 ⟨map,#[]⟩
+    let (type,_) ← modMap origType |>.run {} |>.run {map := map}
     unless !type.hasMVar do
     -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
       throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
@@ -201,7 +205,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
           pure (0, (← elabExtendedCtors newShortIndName newIndName levelParams type 0 ctors))
       else
         pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
-    return { newIndName, numParams, levelParams, type, indNames, addedConstrs }
+    return { newIndName, numParams, levelParams, origType, type, indNames, addedConstrs }
   | _ => throwUnsupportedSyntax
 
 def mkSizeOfName (name : Name) : Name :=

@@ -23,15 +23,15 @@ inductive Natt : Type where
 -- We encode a "partial map" from `Nat` to `Natt` manually here, the objective later is to generate those (and more, e.g for `below`, `recOn`, `brecOn` etc) automatically.
 meta def testmap : ModularMap :=
   Std.HashMap.emptyWithCapacity 0
-    |>.insert (``Nat).eraseMacroScopes ⟨q(Natt),[], 0, 0⟩
-    |>.insert (``Nat.zero).eraseMacroScopes ⟨q(Natt.zero),[],0,0⟩
-    |>.insert (``Nat.succ).eraseMacroScopes ⟨mkApp q(Natt.succ) (mkBVar 0),[],1,0⟩
+    |>.insert (``Nat).eraseMacroScopes ⟨mkConst ``Natt,[], 0, 0⟩
+    |>.insert (``Nat.zero).eraseMacroScopes ⟨mkConst ``Natt.zero,[],0,0⟩
+    |>.insert (``Nat.succ).eraseMacroScopes ⟨mkApp (mkConst ``Natt.succ) (mkBVar 0),[],1,0⟩
     |>.insert (``Nat.rec).eraseMacroScopes ⟨mkApp5 (mkConst ``Natt.rec [.param `u]) (mkBVar 3) (mkBVar 2) (mkBVar 1) (mkBVar 4) (mkBVar 0),[`u],4,1⟩
 
 elab "#partial_map" e:term : command =>
   liftTermElabM do
     let e ← elabTerm e none
-    let (mapped_term,_) ← modMap e |>.run ⟨testmap,#[]⟩
+    let (mapped_term,_) ← modMap e |>.run {} |>.run {map := testmap}
     logInfo m!"{mapped_term}"
 
 set_option pp.mvars.levels false

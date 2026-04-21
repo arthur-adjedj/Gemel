@@ -86,7 +86,8 @@ def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr →
   let rec loop (i : Nat) (fvars : Array Expr) := do
     if h : i < decls.size then
       let header := decls[i]
-      withAuxDecl header.newName header.type header.shortNewName fun fvar => loop (i+1) (fvars.push fvar)
+      withAuxDecl header.newName header.type header.shortNewName fun fvar =>
+        loop (i+1) (fvars.push fvar)
     else
       k fvars
   loop 0 #[]
@@ -217,15 +218,17 @@ meta def elabModDef : ModularElab := fun stx =>
       -- mapped values are constructed in a temp map that contains the declarations being currently defined
       withSetMap (← add_temp_mappings (← getMap)) do
       withAssignableSyntheticOpaque do
-        let (mvars, mappedValues, mappedTypes) ← modmapHeaders mapHeaders
+        let lctx ← getLCtx
+        let (mvars, mappedValues, mappedTypes) ← withReader (fun _ => lctx) do modmapHeaders mapHeaders
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then
           throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
         let mut matchMVars : Std.HashSet MVarId := {}
-        -- TODO do context renaming using `argNames`
-        for {matchName, mvar, originalMatch, modMappedRhss} in matchExtensions, {ref, name, alts, argNames} in matchClauses do
+          -- If one of the discriminants changes from translation, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
+          -- TODO for matches that don't need new arms, the current setup still asks user to write `matcher match_i with` with no new alts. Ideally, we should attempt to translate such "obvious" matches automatically, either here or in `ModDef`
+        for {matchName, mvar, originalMatch, modMappedRhss, originalLCtx} in matchExtensions, {ref, name, alts, argNames} in matchClauses do
           -- TODO surely something like that is needed right ?
           -- if ← mvar.isAssigned then
             -- continue
@@ -236,11 +239,11 @@ meta def elabModDef : ModularElab := fun stx =>
           unless Name.mkSimple matchName = name do
             throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
           -- Problem: right now, there is absolutely no guarantee that `originalMatch` is well-formed in the current context (namely, the fvars' types/values have been modmapped here already.), `matchExtensions` (and so `modMap`) should keep a copy of the original context during its traversal in order to reuse it here. Let's just pretend that's not an issue for now..
+          trace[Modular.Elab] "originalMatch : {← withLCtx' originalLCtx do pure originalMatch}"
+          let some matcherBundle ← withLCtx' originalLCtx do mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
+          trace[Modular.Elab] "matcherBundle generated"
           mvar.withContext do
             withArgNames argNames do
-            trace[Modular.Elab] "originalMatch : {originalMatch}"
-            let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-            trace[Modular.Elab] "matcherBundle generated"
             let matcherBundle ← matcherBundle.modMap modMappedRhss
             trace[Modular.Elab] "matcherBundle modmapped"
             trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"

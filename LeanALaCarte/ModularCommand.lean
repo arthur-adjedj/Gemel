@@ -32,23 +32,23 @@ def messageToString (msg : Message) (reportPos? : Option Nat) : CommandElabM Str
   return str
 
 def runAndCollectModularMessages (cmd : TSyntax `modular_command) : ModularElabM MessageLog := do
-  let oldState ← StateT.lift get
-  StateT.lift <| modify fun st => { st with messages := .empty, snapshotTasks := #[] }
-  withReader ({ · with snap? := none }) do
+  let oldState ← getThe Command.State
+  modifyThe Command.State fun st => { st with messages := .empty, snapshotTasks := #[] }
+  withTheReader Command.Context ({ · with snap? := none }) do
     elabModularCommand cmd
-  let newState ← StateT.lift get
+  let newState ← getThe Command.State
   let msgs := newState.messages ++
     (newState.snapshotTasks.foldl (· ++ ·.get.getAll.foldl (· ++ ·.diagnostics.msgLog) .empty) .empty)
-  StateT.lift <| modify fun st => { st with messages := oldState.messages, snapshotTasks := oldState.snapshotTasks }
+  modifyThe Command.State fun st => { st with messages := oldState.messages, snapshotTasks := oldState.snapshotTasks }
   return msgs
 
 def withScopedOptions (opts : Options) (x : ModularElabM Unit) : ModularElabM Unit := do
-  let oldOpts ← StateT.lift getOptions
-  StateT.lift <| modifyScope fun scope => { scope with opts := opts }
+  let oldOpts ← getOptions
+  modifyScope fun scope => { scope with opts := opts }
   try
     x
   finally
-    StateT.lift <| modifyScope fun scope => { scope with opts := oldOpts }
+    modifyScope fun scope => { scope with opts := oldOpts }
 
 syntax (name := modular_guard_msgs)
   (docComment)? "#guard_msgs" (ppSpace guardMsgsSpec)? " in" ppLine modular_command : modular_command
@@ -57,9 +57,9 @@ syntax (name := modular_guard_msgs)
 def elabModularGuardMsgs : ModularElab := fun stx => do
   match stx with
   | `(modular_command| $[$dc?:docComment]? #guard_msgs%$tk $(spec?)? in $cmd) => do
-    let expected : String := (← dc?.mapM (StateT.lift <| getDocStringText ·)).getD ""
+    let expected : String := (← dc?.mapM (getDocStringText ·)).getD ""
       |>.trimAscii |>.copy |> removeTrailingWhitespaceMarker
-    let { whitespace, ordering, filterFn, reportPositions, substring } ← StateT.lift <| parseGuardMsgsSpec spec?
+    let { whitespace, ordering, filterFn, reportPositions, substring } ← parseGuardMsgsSpec spec?
     let msgs ← runAndCollectModularMessages cmd
     let mut toCheck : MessageLog := .empty
     let mut toPassthrough : MessageLog := .empty
@@ -70,30 +70,30 @@ def elabModularGuardMsgs : ModularElab := fun stx => do
       | .check => toCheck := toCheck.add msg
       | .drop => pure ()
       | .pass => toPassthrough := toPassthrough.add msg
-    let map ← StateT.lift getFileMap
+    let map ← getFileMap
     let reportPos? :=
       if reportPositions then
         tk.getPos?.map (map.toPosition · |>.line)
       else
         none
-    let strings ← toCheck.toList.mapM (fun msg => StateT.lift <| messageToString msg reportPos?)
+    let strings ← toCheck.toList.mapM (fun msg => messageToString msg reportPos?)
     let res := "---\n".intercalate (ordering.apply strings) |>.trimAscii |>.copy
     let passed := if substring then
       (whitespace.apply res).contains (whitespace.apply expected)
     else
       whitespace.apply expected == whitespace.apply res
     if passed then
-      StateT.lift <| modify fun st => { st with messages := st.messages ++ toPassthrough }
+      modifyThe Command.State fun st => { st with messages := st.messages ++ toPassthrough }
     else
-      StateT.lift <| modify fun st => { st with messages := st.messages ++ msgs }
+      modifyThe Command.State fun st => { st with messages := st.messages ++ msgs }
       let feedback :=
-        if guard_msgs.diff.get (← StateT.lift getOptions) then
+        if guard_msgs.diff.get (← getOptions) then
           let diff := Diff.diff (expected.split '\n').toStringArray (res.split '\n').toStringArray
           Diff.linesToString diff
         else
           res
-      StateT.lift <| logErrorAt tk m!"❌️ Docstring on `#guard_msgs` does not match generated message:\n\n{feedback}"
-      StateT.lift <| pushInfoLeaf (.ofCustomInfo { stx := ← StateT.lift getRef, value := Dynamic.mk (GuardMsgFailure.mk res) })
+      logErrorAt tk m!"❌️ Docstring on `#guard_msgs` does not match generated message:\n\n{feedback}"
+      pushInfoLeaf (.ofCustomInfo { stx := ← getRef, value := Dynamic.mk (GuardMsgFailure.mk res) })
   | _ => throwUnsupportedSyntax
 
 partial def findGuardMsgFailure (node : InfoTree) : Option (Syntax × String) :=
@@ -158,7 +158,7 @@ def elabModularElabCommand : ModularElab := fun stx => do
   if stx.isOfKind ``modular_run_command then
     -- TODO figure out a way to keep the command diagnostics with incrementality enabled
     withoutModularCommandIncrementality true do
-      StateT.lift <| elabCommand stx[0]
+      elabCommand stx[0]
   else
     throwUnsupportedSyntax
 

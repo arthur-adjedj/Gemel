@@ -8,64 +8,54 @@ public meta section
 
 open Lean Meta Elab Command Term
 
+-- The main context in which this runs is the original context, not the modmapped one!
 partial def modMapAux (e : Expr): ModularM Expr := do
   withIncRecDepth do
-  -- withNewMCtxDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do e.withApp fun fn args => do
-  if let .const fnName lvls := fn then -- TODO manage universes better
-    -- If a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), one might want, to delta-reduce the constant and map it as well.
-    -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
-    if let some ext := (← getMap)[fnName.eraseMacroScopes]? then
-      --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
-      unless ext.numArgs <= args.size do
-        return ← modMapAux (← Meta.etaExpand e)
-      let newArgs ← modMapArgs args
-      let res := ext.expr
-        |>.instantiateLevelParams ext.levelParams lvls
-        |>.instantiateRev newArgs[:ext.numArgs]
-      trace[Modular.Subst] m!"args instantiated : {res}"
-      trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
-      -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
-      let mvars ← Array.mkM ext.numHoles (mkFreshExprMVar none .syntheticOpaque)
-      trace[Modular.Subst] m!"mvars : {mvars}"
-      let res := res.instantiateRev mvars
-      trace[Modular.Subst] m!"mvars instantiated : {res}"
-      let res := mkAppN res newArgs[ext.numArgs:]
-      trace[Modular.Subst] m!"with extra args : {res}"
-      let res ← instantiateMVars res
-      return res
-    let fallback _ : ModularM Expr := do
-      let newArgs ← modMapArgs args
-      pure (mkAppN fn newArgs)
-    let some info ← getMatcherInfo? fnName | fallback ()
-    trace[Modular.Subst] "matcher {fnName} detected"
-    let mvarLCtx ← getLCtx
-    forallTelescopeReducing (← inferType fn) fun xs _ => do
-      let discrs_fvars := xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs]
-      trace[Modular.Subst] "discrs_fvars : {discrs_fvars}"
-      -- If one of the discriminants changes from translation, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
-      -- TODO for matches that don't need new arms, the current setup still asks user to write `matcher match_i with` with no new alts. Ideally, we should attempt to translate such "obvious" matches automatically, either here or in `ModDef`
-      for hd_fvar in discrs_fvars do
-        let ty ← inferType hd_fvar
-        let mod_ty ← modMapAux ty
-        if ty != mod_ty then
-          let mvar ← withLCtx' mvarLCtx do
-            let mvar_ty ← modMapAux (← inferType e)
-            trace[Modular.Subst] "new matcher type : {mvar_ty}"
-            mkFreshExprMVar mvar_ty .syntheticOpaque --is this enough ?
-          trace[Modular.Subst] "matcher mvar : {mvar}"
-          -- We must compute the modmapped rhss early to report of any potential matchers needing extension
-          let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
-          addMatchExtension { matchName := fnName
-                              mvar := mvar.mvarId!
-                              originalMatch := e
-                              modMappedRhss := rhss }
-          return mvar
-      fallback ()
-  else
-    let newFn ← traverse fn
+  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
+  e.withApp fun fn args => do
+  -- TODO manage universes better
+  let .const fnName lvls := fn | return mkAppN (← traverse fn) (← modMapArgs args)
+  -- If a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), one might want, to delta-reduce the constant and map it as well.
+  -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
+  if let some ext := (← getMap)[fnName.eraseMacroScopes]? then
+    --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
+    unless ext.numArgs <= args.size do
+      return ← modMapAux (← Meta.etaExpand e)
     let newArgs ← modMapArgs args
-    return mkAppN newFn newArgs
+    let res := ext.expr
+      |>.instantiateLevelParams ext.levelParams lvls
+      |>.instantiateRev newArgs[:ext.numArgs]
+    trace[Modular.Subst] m!"args instantiated : {res}"
+    trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
+    -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
+    let mvars ← withModMappedLCtx do Array.mkM ext.numHoles (mkFreshExprMVar none .syntheticOpaque)
+    trace[Modular.Subst] m!"mvars : {mvars}"
+    let res := res.instantiateRev mvars
+    trace[Modular.Subst] m!"mvars instantiated : {res}"
+    let res := mkAppN res newArgs[ext.numArgs:]
+    trace[Modular.Subst] m!"with extra args : {res}"
+    return res
+  let fallback _ : ModularM Expr := do
+    let newArgs ← modMapArgs args
+    pure (mkAppN fn newArgs)
+  let some info ← getMatcherInfo? fnName | fallback ()
+  trace[Modular.Subst] "matcher {fnName} detected"
+  unless ← shouldAbstractMatcher info fn do
+    return ← fallback ()
+  let mvar ← do
+    let mvar_ty ← modMapAux (← inferType e)
+    trace[Modular.Subst] "new matcher type : {mvar_ty}"
+    withLCtx' (← getModMappedLCtx) do mkFreshExprMVar mvar_ty .syntheticOpaque
+  trace[Modular.Subst] "matcher mvar : {mvar}"
+  -- We must compute the modmapped rhss early to report of any potential matchers needing extension
+  let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
+  addMatchExtension { matchName := fnName
+                      mvar := mvar.mvarId!
+                      originalMatch := e
+                      modMappedRhss := rhss
+                      originalLCtx := ← getLCtx }
+  return mvar
+
 where
   modMapArgs args := args.foldlM (init := Array.emptyWithCapacity args.size) fun nargs e => do
     let arg ← modMapAux e
@@ -88,29 +78,43 @@ where
         return .proj tyName idx newStruct
     | .letE ..
     | .lam .. =>
-      lambdaLetTelescope e fun xs e => withmodMappedLctx xs do
-        let newe ← modMapAux e
-        mkLambdaFVars xs newe
+      lambdaLetTelescope e fun xs e => do
+        let modMappedctx ← withAddModMappedFVars xs
+        let newe ← withReader (fun _ => modMappedctx) do modMapAux e
+        withLCtx' modMappedctx do mkLambdaFVars xs newe
     | .forallE .. =>
-      forallTelescope    e fun xs e => withmodMappedLctx xs  do
-        let newe ← modMapAux e
-        mkForallFVars xs newe
+      forallTelescope e fun xs e => do
+        let modMappedctx ← withAddModMappedFVars xs
+        let newe ← withReader (fun _ => modMappedctx) do modMapAux e
+        withLCtx' modMappedctx do mkForallFVars xs newe
     | .mdata m e => return .mdata m (← modMapAux e)
     | _ => unreachable!
 
-  withmodMappedLctx {α} (xs : Array Expr) (k : ModularM α) : ModularM α := do
-    let localInsts ← Meta.getLocalInstances
-    let mut lctx ← getLCtx
+  withAddModMappedFVars (xs : Array Expr) : ModularM LocalContext := do
+    let mut modMappedLCtx ← getModMappedLCtx
     for e in xs do
-      let some lcdl := lctx.findFVar? e | unreachable!
-      let ty ← Meta.withLCtx lctx localInsts (modMapAux lcdl.type)
-      lctx := lctx.modifyLocalDecl e.fvarId! (·.setType ty)
-      let some value := lcdl.value? | continue
-      let value← Meta.withLCtx lctx localInsts (modMapAux value)
-      lctx := lctx.modifyLocalDecl e.fvarId! (·.setValue value)
-    Meta.withLCtx lctx localInsts <| k
+      let some lcdl := (← getLCtx).findFVar? e | unreachable!
+      assert! modMappedLCtx.findFVar? e |>.isNone
+      let newLcdl : LocalDecl ← withReader (fun _ => modMappedLCtx) do
+        match lcdl with
+        | .cdecl i fvarId u ty bi   k => return LocalDecl.cdecl i fvarId u (← modMapAux ty) bi k
+        | .ldecl i fvarId u ty v nd k => return LocalDecl.ldecl i fvarId u (← modMapAux ty) (← modMapAux v) nd k
+      modMappedLCtx := modMappedLCtx.addDecl newLcdl
+    return modMappedLCtx
+
+  shouldAbstractMatcher (info : MatcherInfo) (e : Expr) : ModularM Bool := do
+    forallTelescopeReducing (← inferType e) fun xs _ => do
+      let discrs_fvars := xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs]
+      trace[Modular.Subst] "discrs_fvars : {discrs_fvars}"
+      let modMappedctx ← withAddModMappedFVars xs
+      for hd_fvar in discrs_fvars do
+        let ty ← inferType hd_fvar
+        let mod_ty ← withReader (fun _ => modMappedctx) do modMapAux ty
+        if ty != mod_ty then
+          return true
+      return false
 
 def modMap (e : Expr) : ModularM Expr := do
   let e ← modMapAux e
-  Meta.check e
+  withModMappedLCtx do Meta.check e
   return e
