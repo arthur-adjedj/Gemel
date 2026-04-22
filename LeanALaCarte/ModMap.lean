@@ -34,10 +34,13 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     trace[Modular.Subst] m!"mvars instantiated : {res}"
     let res := mkAppN res newArgs[ext.numArgs:]
     trace[Modular.Subst] m!"with extra args : {res}"
+    withModMappedLCtx do Meta.check res --I hope I can get rid of this in the future..
     return res
   let fallback _ : ModularM Expr := do
     let newArgs ← modMapArgs args
-    pure (mkAppN fn newArgs)
+    let res := (mkAppN fn newArgs)
+    withModMappedLCtx do Meta.check res --I hope I can get rid of this in the future..
+    pure res
   let some info ← getMatcherInfo? fnName | fallback ()
   trace[Modular.Subst] "matcher {fnName} detected"
   unless ← shouldAbstractMatcher info fn do
@@ -116,5 +119,5 @@ where
 
 def modMap (e : Expr) : ModularM Expr := do
   let e ← modMapAux e
-  withModMappedLCtx do Meta.check e
+  -- withModMappedLCtx do Meta.check e
   return e

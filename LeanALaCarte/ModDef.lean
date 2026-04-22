@@ -222,6 +222,7 @@ meta def elabModDef : ModularElab := fun stx =>
         let (mvars, mappedValues, mappedTypes) ← withReader (fun _ => lctx) do modmapHeaders mapHeaders
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
+        let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then
           throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
