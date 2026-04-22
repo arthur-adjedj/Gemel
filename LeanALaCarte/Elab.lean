@@ -49,7 +49,8 @@ export MonadModular (getMap modifyMap)
 
 class MonadModMappedLCtx (m) [Monad m] where
   getModMappedLCtx : m LocalContext
-export MonadModMappedLCtx (getModMappedLCtx)
+  withSetModMappedLCtx : LocalContext → m α → m α
+export MonadModMappedLCtx (getModMappedLCtx withSetModMappedLCtx)
 
 def addMapEntry [Monad m] [MonadModular m] (name : Name) (ext : ModularExtension) : m Unit :=
   modifyMap fun m => m.insert name ext
@@ -92,6 +93,7 @@ instance [Monad m] [MonadModular m] : MonadModular (ReaderT ρ m) where
 
 instance [Monad m] : MonadModMappedLCtx (ReaderT LocalContext m) where
   getModMappedLCtx := read
+  withSetModMappedLCtx lctx := withReader (fun _ => lctx)
 
 class MonadMatchExt (m) [Monad m] where
   addMatchExtension : MatchToExtend → m Unit

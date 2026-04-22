@@ -66,12 +66,21 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
   let matchType ← _root_.modMap matchType
   let lhss ← lhss.mapM fun {ref, fvarDecls, patterns} => do
     --TODO put behind a function
-    let fvarDecls ← fvarDecls.foldlM (init := []) fun prevFvarDecls fvar => do
-      withExistingLocalDecls prevFvarDecls do
-        let ty ← _root_.modMap fvar.type
-        return (fvar.setType ty)::prevFvarDecls
-    let fvarDecls := fvarDecls.reverse
-    let patterns ← withExistingLocalDecls fvarDecls do patterns.mapM Pattern.modMap
+    trace[Modular.Match] "old fvarDecls : {fvarDecls.map fun ldecl => Expr.fvar ldecl.fvarId}"
+    let modMappedLCtx ← getModMappedLCtx
+    -- We have to maintain both the correct original pattern context (by bookkeeping the visited fvar decls) and the modmapped context (modMappedLCtx) for `modMap` to work correctly. Once that's done, the modmapped `fvarDecls` can be fetched out of the modmapped context.
+    let (modMappedLCtx,oldFvarDecls) ← fvarDecls.foldlM (init := (modMappedLCtx,[])) fun (modMappedLCtx, prevOldFvarDecls) lcdl => do
+      withExistingLocalDecls prevOldFvarDecls do
+      withSetModMappedLCtx modMappedLCtx do
+        let ty ← _root_.modMap lcdl.type
+        let modMappedLcdl := lcdl.setType ty
+        return (modMappedLCtx.addDecl modMappedLcdl, lcdl::prevOldFvarDecls)
+    let oldFvarDecls := oldFvarDecls.reverse
+    let fvarDecls := oldFvarDecls.map (modMappedLCtx.get! ·.fvarId)
+    let patterns ←
+      withExistingLocalDecls oldFvarDecls do
+      withSetModMappedLCtx modMappedLCtx do
+        patterns.mapM Pattern.modMap
     trace[Modular.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
     return {ref, fvarDecls, patterns : AltLHS}
   trace[Modular.Match] "lhss translated"

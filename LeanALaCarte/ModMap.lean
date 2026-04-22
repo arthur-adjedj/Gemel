@@ -80,12 +80,12 @@ where
     | .lam .. =>
       lambdaLetTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs
-        let newe ← withReader (fun _ => modMappedctx) do modMapAux e
+        let newe ← withSetModMappedLCtx modMappedctx do modMapAux e
         withLCtx' modMappedctx do mkLambdaFVars xs newe
     | .forallE .. =>
       forallTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs
-        let newe ← withReader (fun _ => modMappedctx) do modMapAux e
+        let newe ← withSetModMappedLCtx modMappedctx do modMapAux e
         withLCtx' modMappedctx do mkForallFVars xs newe
     | .mdata m e => return .mdata m (← modMapAux e)
     | _ => unreachable!
@@ -95,7 +95,7 @@ where
     for e in xs do
       let some lcdl := (← getLCtx).findFVar? e | unreachable!
       assert! modMappedLCtx.findFVar? e |>.isNone
-      let newLcdl : LocalDecl ← withReader (fun _ => modMappedLCtx) do
+      let newLcdl : LocalDecl ← withSetModMappedLCtx modMappedLCtx do
         match lcdl with
         | .cdecl i fvarId u ty bi   k => return LocalDecl.cdecl i fvarId u (← modMapAux ty) bi k
         | .ldecl i fvarId u ty v nd k => return LocalDecl.ldecl i fvarId u (← modMapAux ty) (← modMapAux v) nd k
@@ -109,7 +109,7 @@ where
       let modMappedctx ← withAddModMappedFVars xs
       for hd_fvar in discrs_fvars do
         let ty ← inferType hd_fvar
-        let mod_ty ← withReader (fun _ => modMappedctx) do modMapAux ty
+        let mod_ty ← withSetModMappedLCtx modMappedctx do modMapAux ty
         if ty != mod_ty then
           return true
       return false
