@@ -220,6 +220,12 @@ def mkNoConfusionTypeName (indName : Name) : Name :=
 def mkNoConfusionName (indName : Name) : Name :=
   Name.str indName "noConfusionType"
 
+def mkInjName (ctorName : Name) : Name :=
+  Name.str ctorName "inj"
+
+def mkInjEqName (ctorName : Name) : Name :=
+  Name.str ctorName "injEq"
+
 def mkAuxMappingIfValid (oldName newName : Name) : ModularM Unit := do
   let env ← getEnv
   if env.contains oldName && env.contains newName then
@@ -244,13 +250,14 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     modifyMap (·.insert indName indExt)
     -- maps := (indName.eraseMacroScopes,indExt)::maps
     let indVal ← getConstInfoInduct indName
-    for ctor in indVal.ctors do
-      let newCtorName := ctor.replacePrefix indName newIndName
+    for ctorName in indVal.ctors do
+      let newCtorName := ctorName.replacePrefix indName newIndName
       let ctorExt : ModularExtension := { expr := mkConst newCtorName newIndLevels
                                           levelParams := newIndParams
                                           numArgs := 0
                                           numHoles := 0 }
-      modifyMap (·.insert ctor.eraseMacroScopes ctorExt)
+      modifyMap (·.insert ctorName ctorExt)
+      mkAuxMappings [mkInjName,mkInjEqName] ctorName newCtorName
     let oldRecName := mkRecName indName
     let oldRecVal ← getConstInfoRec oldRecName
     let oldNumArgs := oldRecVal.type.getNumHeadForalls
