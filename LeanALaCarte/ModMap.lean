@@ -84,7 +84,8 @@ where
       lambdaLetTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs
         let newe ← withSetModMappedLCtx modMappedctx do modMapAux e
-        withLCtx' modMappedctx do mkLambdaFVars xs newe
+        withLCtx' modMappedctx do mkLetFVars xs newe (generalizeNondepLet := false)
+
     | .forallE .. =>
       forallTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs

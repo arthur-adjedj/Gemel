@@ -218,7 +218,7 @@ def mkNoConfusionTypeName (indName : Name) : Name :=
   Name.str indName "noConfusionType"
 
 def mkNoConfusionName (indName : Name) : Name :=
-  Name.str indName "noConfusionType"
+  Name.str indName "noConfusion"
 
 def mkInjName (ctorName : Name) : Name :=
   Name.str ctorName "inj"
@@ -257,7 +257,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
                                           numArgs := 0
                                           numHoles := 0 }
       modifyMap (·.insert ctorName ctorExt)
-      mkAuxMappings [mkInjName,mkInjEqName] ctorName newCtorName
+      mkAuxMappings [mkInjName, mkInjEqName, mkNoConfusionName] ctorName newCtorName
     let oldRecName := mkRecName indName
     let oldRecVal ← getConstInfoRec oldRecName
     let oldNumArgs := oldRecVal.type.getNumHeadForalls

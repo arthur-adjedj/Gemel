@@ -2,7 +2,7 @@ module
 
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
-
+public meta import Lean.Elab.Tactic.Config
 public section
 
 open Lean Meta Elab Command Term
@@ -247,12 +247,21 @@ open Language in
 instance : ToSnapshotTree ModularBlockSnapshot where
   toSnapshotTree s := SnapshotTree.mk s.toSnapshot #[]
 
-syntax (name := modular_block) "modular" manyIndent(modular_command) : command
+structure ModularSetup where
+  name : Name := .anonymous
+  imports : Array Name := #[]
+
+declare_command_config_elab elabModularSetup ModularSetup
+
+syntax (name := modular_block) "modular" Parser.Tactic.optConfig manyIndent(modular_command) : command
+
+initialize modularMaps : IO.Ref (Std.HashMap Name ModularElabState) ← IO.mkRef {}
 
 @[command_elab modular_block, incremental]
 def elabModularBlock : CommandElab := fun stx => do
   match stx with
-  | `(command| modular $[$m]* ) => do
+  | `(command| modular $cfg:optConfig $[$m]* ) => do
+    let cfg ← elabModularSetup cfg
     if let some snap := (← read).snap? then
       let oldSnap? := do
         let oldSnap ← snap.old?
@@ -261,6 +270,10 @@ def elabModularBlock : CommandElab := fun stx => do
         snap.old?.forM (·.val.cancelRec)
       let opts ← getOptions
       let mut map : ModularElabState := {}
+      for name in cfg.imports do
+        let some modmap := (← modularMaps.get)[name]?
+          | throwError "Failed to import modular mapping {name}."
+        map := ⟨map.map ∪ modmap.map⟩
       let mut outputs : Array (Command.State × ModularElabState) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
@@ -291,8 +304,17 @@ def elabModularBlock : CommandElab := fun stx => do
         outputs
         : ModularBlockSnapshot
       }
+      if !cfg.name.isAnonymous then
+        modularMaps.modify (Std.HashMap.insert · cfg.name map)
     else
-      let _ ← elabModularCommands m |>.run {} |>.run {}
+      let mut map : ModularElabState := {}
+      for name in cfg.imports do
+        let some modmap := (← modularMaps.get)[name]?
+          | throwError "Failed to import modular mapping {name}."
+        map := ⟨map.map ∪ modmap.map⟩
+      let (_,endMap) ← elabModularCommands m |>.run {} |>.run map
+      if !cfg.name.isAnonymous then
+        modularMaps.modify (Std.HashMap.insert · cfg.name endMap)
   | _ => throwUnsupportedSyntax
 
 initialize
