@@ -3,6 +3,7 @@ module
 public meta import LeanALaCarte.Elab
 public meta import Lean.Elab.GuardMsgs
 public import LeanALaCarte.Elab
+public meta import LeanALaCarte.AuxMapping
 
 public meta section
 
@@ -161,5 +162,15 @@ def elabModularElabCommand : ModularElab := fun stx => do
       elabCommand stx[0]
   else
     throwUnsupportedSyntax
+
+syntax (name := modular_add_mapping) "add_mapping" ident "=>" ident : modular_command
+@[modular_elab modular_add_mapping]
+def elabModularAddMapping : ModularElab := fun stx => do
+  match stx with
+  | `(modular_command| add_mapping $old => $new) => liftModularM do
+    let old ← resolveGlobalConstNoOverload old
+    let new ← resolveGlobalConstNoOverload new
+    addAuxMapping old new
+  | _ => throwUnsupportedSyntax
 
 end
