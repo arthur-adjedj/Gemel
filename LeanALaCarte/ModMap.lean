@@ -11,7 +11,7 @@ open Lean Meta Elab Command Term
 -- The main context in which this runs is the original context, not the modmapped one!
 partial def modMapAux (e : Expr): ModularM Expr := do
   withIncRecDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{exn.toOption.map indentExpr}") do
+  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{← (withModMappedLCtx do return exn.toOption.map indentExpr)}") do
   e.withApp fun fn args => do
   -- TODO manage universes better
   let .const fnName lvls := fn | return mkAppN (← traverse fn) (← modMapArgs args)
@@ -34,12 +34,10 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     trace[Modular.Subst] m!"mvars instantiated : {res}"
     let res := mkAppN res newArgs[ext.numArgs:]
     trace[Modular.Subst] m!"with extra args : {res}"
-    withModMappedLCtx do Meta.check res --I hope I can get rid of this in the future..
     return res
   let fallback _ : ModularM Expr := do
     let newArgs ← modMapArgs args
     let res := (mkAppN fn newArgs)
-    withModMappedLCtx do Meta.check res --I hope I can get rid of this in the future..
     pure res
   let some info ← getMatcherInfo? fnName | fallback ()
   trace[Modular.Subst] "matcher {fnName} detected"
@@ -83,14 +81,17 @@ where
     | .lam .. =>
       lambdaLetTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs
-        let newe ← withSetModMappedLCtx modMappedctx do modMapAux e
-        withLCtx' modMappedctx do mkLetFVars xs newe (generalizeNondepLet := false)
-
+        withSetModMappedLCtx modMappedctx do
+          let e ← modMapAux e
+          withModMappedLCtx do Meta.check e
+          withLCtx' modMappedctx do mkLetFVars xs e (generalizeNondepLet := false)
     | .forallE .. =>
       forallTelescope e fun xs e => do
         let modMappedctx ← withAddModMappedFVars xs
-        let newe ← withSetModMappedLCtx modMappedctx do modMapAux e
-        withLCtx' modMappedctx do mkForallFVars xs newe
+        withSetModMappedLCtx modMappedctx do
+          let e ← modMapAux e
+          withModMappedLCtx do Meta.check e
+          withLCtx' modMappedctx do mkForallFVars xs e
     | .mdata m e => return .mdata m (← modMapAux e)
     | _ => unreachable!
 

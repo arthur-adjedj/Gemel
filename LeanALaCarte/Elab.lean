@@ -318,8 +318,9 @@ def elabModularBlock : CommandElab := fun stx => do
   | _ => throwUnsupportedSyntax
 
 initialize
-  registerTraceClass `Modular.Elab
-  registerTraceClass `Modular.Subst
-  registerTraceClass `Modular.Match
+  registerTraceClass `Modular (inherited := true)
+  registerTraceClass `Modular.Elab (inherited := true)
+  registerTraceClass `Modular.Subst (inherited := true)
+  registerTraceClass `Modular.Match (inherited := true)
 
 end
