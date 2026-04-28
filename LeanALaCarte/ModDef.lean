@@ -173,6 +173,35 @@ def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (ma
   addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
   trace[Modular.Elab] "Predefs elaborated successfully"
 
+def elabModMatch (newFunName : Name) (matchExt : MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
+  let {matchName, mvar, originalMatch, modMappedRhss, originalLCtx} := matchExt
+  let {ref, name, alts, argNames} := matchClause
+  if ← mvar.isAssigned then return
+  withRef ref do
+  trace[Modular.Elab] "Elaborating matcher : {name} {Expr.mvar mvar}"
+  let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
+  unless Name.mkSimple matchName = name do
+    throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
+  let mvarDecl ← mvar.getDecl
+  withLCtx' originalLCtx do
+  withSetModMappedLCtx mvarDecl.lctx do
+    trace[Modular.Elab] "originalMatch : {originalMatch}"
+    trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
+    let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
+    trace[Modular.Elab] "matcherBundle generated"
+    let matcherBundle ← matcherBundle.modMap modMappedRhss
+    trace[Modular.Elab] "matcherBundle modmapped"
+    trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
+    withModMappedLCtx do
+    withArgNames argNames do
+    Term.withDeclName newFunName do
+      let newMatcherExpr ← matcherBundle.mkMatcher alts
+      mvar.assign newMatcherExpr
+
+def elabModMatchNoClauses (newFunName : Name) (matchExt : MatchToExtend) : ModularM Unit := do
+  let .str _ name := matchExt.matchName | throwError "Unexpected match name {matchExt.matchName}"
+  elabModMatch newFunName matchExt ⟨.missing, .mkSimple name,#[],#[]⟩
+
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
@@ -222,44 +251,27 @@ meta def elabModDef : ModularElab := fun stx =>
         let (mvars, mappedValues, mappedTypes) ← withReader (fun _ => lctx) do modmapHeaders mapHeaders
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
+        -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
+        let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
+        let matchMVars : Std.HashSet MVarId := matchExtensions.foldl (init := {}) fun acc {mvar,..} => acc.insert mvar
+        -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
+        for matchExt in matchExtensions do
+          withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.matchName} without adding new branches") do
+            try
+              elabModMatchNoClauses newFunName matchExt
+              trace[Modular.Elab] "Elaboration of matcher {matchExt.matchName} succeeded without adding new branches"
+            catch | e => do
+              trace[Modular.Elab] m!"{e.toMessageData}"
+              -- continue
+        trace[Modular.Elab] "foo"
         let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then
           throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
-        let mut matchMVars : Std.HashSet MVarId := {}
-          -- If one of the discriminants changes from translation, we hide the entire match behind a metavariable, save the original matcher somewhere, and replace the whole thing with a new matcher with extended arm
-          -- TODO for matches that don't need new arms, the current setup still asks user to write `matcher match_i with` with no new alts. Ideally, we should attempt to translate such "obvious" matches automatically, either here or in `ModDef`
-        for {matchName, mvar, originalMatch, modMappedRhss, originalLCtx} in matchExtensions, {ref, name, alts, argNames} in matchClauses do
-          -- TODO surely something like that is needed right ?
-          -- if ← mvar.isAssigned then
-            -- continue
-          matchMVars := matchMVars.insert mvar
-          withRef ref do
-          trace[Modular.Elab] "Elaborating matcher : {name} {Expr.mvar mvar}"
-          let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
-          unless Name.mkSimple matchName = name do
-            throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
-          let mvarDecl ← mvar.getDecl
-          withLCtx' originalLCtx do
-          withSetModMappedLCtx mvarDecl.lctx do
-            trace[Modular.Elab] "originalMatch : {originalMatch}"
-            trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
-            let some matcherBundle ←  mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-            trace[Modular.Elab] "matcherBundle generated"
-            let matcherBundle ← matcherBundle.modMap modMappedRhss
-            trace[Modular.Elab] "matcherBundle modmapped"
-            trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
-            withModMappedLCtx do
-            withArgNames argNames do
-            Term.withDeclName newFunName do
-              let newMatcherExpr ← matcherBundle.mkMatcher alts
-              mvar.assign newMatcherExpr
+        for matchExt in matchExtensions, matchClause in matchClauses do
+          elabModMatch newFunName matchExt matchClause
         -- We solve mvars generated by extended matches separately
-        trace[Modular.Elab] "matchMVars pre-delay : {← matchMVars.toArray.mapM fun mvar => return (Expr.mvar mvar, ← mvar.isDelayedAssigned, ← getExprMVarAssignment? mvar)}"
-        trace[Modular.Elab] "matchMVars post-delay: {← matchMVars.toArray.mapM fun mvar => return Expr.mvar (← getDelayedMVarRoot mvar)}"
-        trace[Modular.Elab] "Mvars pre-delay : {← mvars.mapM fun mvar => return (Expr.mvar mvar, ← mvar.isAssigned, ← getExprMVarAssignment? mvar)}"
         let mvars ← mvars.mapM getDelayedMVarRoot
-        trace[Modular.Elab] "Mvars post-delay : {mvars.map Expr.mvar}"
         let mvars ← mvars.filterM (notM ·.isAssigned)
         trace[Modular.Elab] "Mvars filtered : {mvars.map Expr.mvar}"
 

@@ -88,6 +88,22 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
   -- trace[Modular.Match] "rhss translated"
   return {discrs, matchType, lhss, rhss := newRhss : MatcherBundle}
 
+/- Same as the core version, except it throws an error rather than log one-/
+def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) : TermElabM Unit := do
+  unless result.counterExamples.isEmpty do
+    withHeadRefOnly <| throwError m!"Missing cases:\n{Meta.Match.counterExamplesToMessageData result.counterExamples}"
+    return ()
+  unless match.ignoreUnusedAlts.get (← getOptions) || result.unusedAltIdxs.isEmpty do
+    let mut i := 0
+    for alt in altLHSS do
+      if result.unusedAltIdxs.contains i then
+        withRef alt.ref do withInPattern do withExistingLocalDecls alt.fvarDecls do
+          let pats ← alt.patterns.mapM fun p => return toMessageData (← Pattern.toExpr p)
+          let pats := MessageData.joinSep pats ", "
+          throwError (mkRedundantAlternativeMsg none pats)
+      i := i + 1
+
+
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
   let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
   unless oldlhss.length == oldrhss.size do
@@ -144,7 +160,7 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   trace[Modular.Match] "matcherName : {matcherName}"
   let matcherResult ← Lean.Elab.Term.mkMatcher { matcherName, matchType, lhss, discrInfos := discrs.map fun ⟨_,h⟩ => ⟨h.map Syntax.getId⟩}
   trace[Modular.Match] "matcherResult generated"
-  reportMatcherResultErrors lhss matcherResult
+  reportMatcherResultErrors' lhss matcherResult
   trace[Modular.Match] "errors reported"
   matcherResult.addMatcher
   trace[Modular.Match] "matcher added"
