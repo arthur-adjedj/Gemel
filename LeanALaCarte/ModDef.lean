@@ -1,20 +1,12 @@
 module
 
-public import Lean.Parser.Command
-public import Lean.Parser.Tactic
-public import Lean.Parser.Term
-public import Lean.Elab.MutualDef
-public meta import Lean.Meta.Tactic.Try
 public meta import Lean.Elab.PreDefinition.Main
-public import Lean.Elab.Term.TermElabM
-public import Lean.Elab.Match
-public meta import LeanALaCarte.ModMap
-public meta import LeanALaCarte.Elab
-public meta import LeanALaCarte.CollectDelayedAssignementsWithArgs
-public meta import LeanALaCarte.AuxMapping
 public meta import LeanALaCarte.CollectAuxDefs
-public meta import LeanALaCarte.UnfoldEqns
-public meta import LeanALaCarte.ExtendMatch
+public meta import Lean.Meta.Tactic.Try.Collect
+public import LeanALaCarte.AuxMapping
+public import LeanALaCarte.ExtendMatch
+public meta import Std.Do.Triple.SpecLemmas
+import Lean.Elab.PreDefinition.Basic
 
 public meta section
 
@@ -205,17 +197,20 @@ def elabModMatchNoClauses (newFunName : Name) (matchExt : MatchToExtend) : Modul
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $[$newFunStx]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
+  | `(modular_command| $mod:declModifiers mod_def $[$newFunStx?]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
     let modifiers ← elabModifiers mod
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
-    withRef stx do
     let oldFunCinfo ← getConstInfo oldFunName
     unless oldFunCinfo.hasValue (allowOpaque := true) do
       throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
-    let expandedDeclId ← withRef? newFunStx do
-      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams (newFunStx.getD oldFun) modifiers
+    let expandedDeclId ← withRef? newFunStx? do
+      let newFunStx :=
+        if let some newFunStx := newFunStx? then
+          newFunStx else
+        if let .str _ oldFunSuffix := oldFunName then mkIdent (.mkSimple oldFunSuffix) else oldFun
+      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams newFunStx modifiers
     let newFunName := expandedDeclId.declName
     checkNotAlreadyDeclared newFunName
     let newShortName := expandedDeclId.shortName
@@ -253,7 +248,6 @@ meta def elabModDef : ModularElab := fun stx =>
         let matchExtensions ← getMatchExtensions
         -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
         let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
-        let matchMVars : Std.HashSet MVarId := matchExtensions.foldl (init := {}) fun acc {mvar,..} => acc.insert mvar
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
         for matchExt in matchExtensions do
           withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.matchName} without adding new branches") do
@@ -291,12 +285,11 @@ meta def elabModDef : ModularElab := fun stx =>
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod_def` generated unresolved metavariables"
-        if let some funName := newFunStx then
-          addDeclarationRangesFromSyntax newFunName funName funName
+        addDeclarationRangesFromSyntax newFunName stx
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
 
-    -- All is done, we can leave the `withModifyMap` and `withLocalDeclsDND` scopes and add the correct mappings to the environment
+    -- All is done, we can leave the `withMappedHeadersDecls` and `withSetMap` scopes and add the correct mappings to the environment
     for {cinfo, newName, ..} in mapHeaders do
       let newMapEntry := {
         expr := mkConst newName (cinfo.levelParams.map Level.param)

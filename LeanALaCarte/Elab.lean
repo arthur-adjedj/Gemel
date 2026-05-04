@@ -3,6 +3,7 @@ module
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
 public meta import Lean.Elab.Tactic.Config
+import Lean.Elab.Tactic.Config
 public section
 
 open Lean Meta Elab Command Term

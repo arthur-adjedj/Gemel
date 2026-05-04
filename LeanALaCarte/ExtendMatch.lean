@@ -1,6 +1,5 @@
 module
 
-public import Lean
 public import LeanALaCarte.ModMap
 import all Lean.Elab.Match
 

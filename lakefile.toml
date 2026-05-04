@@ -1,9 +1,13 @@
 name = "LeanALaCarte"
 version = "0.1.0"
 defaultTargets = ["LeanALaCarte"]
-
+testDriver = "LeanALaCarteTest"
+ 
 [[lean_lib]]
 name = "LeanALaCarte"
+
+[[lean_lib]]
+name = "LeanALaCarteTest"
 
 [[require]]
 name = "Qq"
