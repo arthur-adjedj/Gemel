@@ -7,7 +7,6 @@ public meta section
 
 open Lean Parser Elab Meta Command
 
-
 /-- This function does **not** check for the correctness of the translation, which may lead to the construction of ill-formed terms through ill-defined translations. Furthermore, the algorithm is very naive in that it simply decides the "holes" are the extra args at the end of the forall telescope, rather than be name/type-directed.
 TODO proper checks and smarter algorithm here. -/
 def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) := do

@@ -16,14 +16,10 @@ structure MatcherBundle where
 def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   trace[Modular.Match] "mkMatcherBundle {e}"
   e.withApp fun fn args => do
-  -- Check that this is a matcher, and then set up overapplication.
   let Expr.const c us := fn | return none
   let some info ← getMatcherInfo? c | return none
   assert! args.size >= info.arity
   let matchType ←  lambdaTelescope args[info.getMotivePos]! fun xs t => mkForallFVars xs t
-  -- First pass visiting the match application. Incrementally fills `AppMatchState`,
-  -- collecting information needed to delaborate the patterns and RHSs.
-  -- No need to visit the parameters themselves.
   let params := args[0...info.numParams]
   trace[Modular.Match] "matcher params : {params}"
   let matcherType ← instantiateForall (← instantiateTypeLevelParams (← getConstVal c) us) params

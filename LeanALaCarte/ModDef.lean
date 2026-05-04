@@ -106,7 +106,7 @@ def modular_where_match_clause := leading_parser
 structure MatchClause where
   ref  : Syntax
   name : Name
-  argNames : Array Name --TODO use that to rename context vars
+  argNames : Array Name
   alts : Array Term.TermMatchAltView
 
 def elabModularWhereMatch (stx : Syntax) : MatchClause :=
@@ -116,7 +116,7 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   { ref := stx, name, argNames, alts }
 
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" (ident)? "extends" ident ("where " colGt (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+  declModifiers "mod_def" (ident)? "extends" ident ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=
@@ -229,7 +229,8 @@ meta def elabModDef : ModularElab := fun stx =>
       let add_temp_mappings (map : ModularMap):= do
         let mut mappings := []
         for {cinfo, ..} in mapHeaders, x in xs do
-          -- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
+          /- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
+          The only culprit kind of auxiliary function I could find that does have more universes than the original declaration's is matchers. This is partly why they are abstracted away entirely in the modmapped term, and fresh matchers get elaborated in place of the original ones in `elabModMatch`.-/
           unless cinfo.levelParams = oldFunCinfo.levelParams do
             throwError s!"Unexpected: Unable to abstract auxiliary function {cinfo.name}: the original declaration has different level parameters ({cinfo.levelParams}) compared to {oldFunCinfo.name} (oldFunCinfo.levelParams)"
           let newMapEntry := {
