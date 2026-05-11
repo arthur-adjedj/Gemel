@@ -12,12 +12,26 @@ public meta section
 
 open Lean Parser Elab Meta Command
 
+namespace IndExtension
 
-/-- Bundle of the various syntax elements of an extended inductive, to be elaborated as an `ExtendedInd` later -/
-structure ExtendedIndView where
-  -- TODO
-  -- notes: Don't forget to include things like attributes, check what's in `InductiveView` and what should/shouldn't be kept/used here.
-  -- One current limitation is that Lean does not record what attributes where applied to a given declaration, so copying/adapting the
+/-- Encodes the extension of some inductive by some other inductive types. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors. -/
+structure AddInds where
+  /-We ideally want extensions to extend arbitrary inductives family instantiations , not just the base case, e.g consider cases like:`inductive Foo (A) extends Prod A A where ...`.
+  (Instantiating type parameters of the extended types here makes sense to me, instantiating indices not so much.)
+  In practice, the toy system currently implemented simply maps from constant names to Exprs, so it wouldn't work for such cases. Instead, the real implementation will have to rely on something to unify patterns, e.g using `DiscrTree`s-/
+  indNames : Array Name
+
+/-- Encodes the extension of some inductive types by adding new constructors. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors.  -/
+structure AddCtors where
+  lparams : List Name
+  indType : Expr
+  addedCtors : Array Constructor
+
+inductive _root_.IndExtension where
+  | addCtors : AddCtors → IndExtension
+  | addInds : AddInds → IndExtension
+
+end IndExtension
 
 /- TODO extend structure to manage mutual types -/
 structure ExtendedInd where
@@ -26,16 +40,40 @@ structure ExtendedInd where
   levelParams : List Name
   origType : Expr
   type : Expr
-  /-We ideally want extensions to extend arbitrary inductives family instantiations , not just the base case, e.g consider cases like:`inductive Foo (A) extends Prod A A where ...`.
-  (Instantiating type parameters of the extended types here makes sense to me, instantiating indices not so much.)
-  In practice, the toy system currently implemented simply maps from constant names to Exprs, so it wouldn't work for such cases. Instead, the real implementation will have to rely on something to unify patterns, e.g using `DiscrTree`s-/
-  indNames : Array Name
-  addedConstrs : Array Constructor
+  extensions : List IndExtension
 
-def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
-  let indVals ← e.indNames.mapM getConstInfoInduct
+def IndExtension.AddInds.modifyInductiveView (e : ExtendedInd) (indFVar : Expr) (tempIndExt : ModularExtension) (indType : InductiveType) (addInds : AddInds): ModularM InductiveType := do
+  let indVals ← addInds.indNames.mapM getConstInfoInduct
   let inheritedCtors ← indVals.foldlM (init := []) fun acc indVal => do
     return (← indVal.ctors.mapM getConstInfoCtor) ++ acc
+  let tempMap := addInds.indNames.foldl (init := ← getMap) fun acc indName =>
+    acc.insert indName.eraseMacroScopes tempIndExt
+  let tempMap := tempMap.insert e.newIndName.eraseMacroScopes tempIndExt
+  withSetMap tempMap do
+  let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
+  let inheritedCtors ← inheritedCtors.mapM fun ctor => do
+    let ctorType ← modMap ctor.type
+    unless !ctorType.hasMVar do
+      -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+      throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
+    let ctorType := ctorType.replace fun
+      | .fvar fvarId =>
+        if fvarId == indFVar.fvarId! then some newIndConst else none
+      | _ => none
+    return {
+      name := ctor.name.replacePrefix ctor.induct e.newIndName
+      type := ctorType : Constructor
+    }
+  return {indType with ctors := indType.ctors ++ inheritedCtors}
+
+def IndExtension.AddCtors.modifyInductiveView (indType : InductiveType) (addCtors : AddCtors): ModularM InductiveType :=
+  return {indType with ctors := indType.ctors ++ addCtors.addedCtors.toList}
+
+def IndExtension.modifyInductiveView (e : ExtendedInd) (indFVar : Expr) (tempIndExt : ModularExtension) (indType : InductiveType) : IndExtension → ModularM InductiveType
+  | .addCtors a => a.modifyInductiveView indType
+  | .addInds a => a.modifyInductiveView e indFVar tempIndExt indType
+
+def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
   withLocalDeclD e.newIndName e.origType fun newIndFVar => do
     let .cdecl i fvarId u _ bi k := (← getLCtx).get! newIndFVar.fvarId! | unreachable!
     let mappedDecl := .cdecl i fvarId u e.type bi k
@@ -46,30 +84,12 @@ def ExtendedInd.toInductiveView (e : ExtendedInd) : ModularM InductiveType := do
       numArgs := 0
       numHoles := 0
     }
-    let tempMap := e.indNames.foldl (init := ← getMap) fun acc indName =>
-      acc.insert indName.eraseMacroScopes tempIndExt
-    let tempMap := tempMap.insert e.newIndName.eraseMacroScopes tempIndExt
-    withSetMap tempMap do
-      let newIndConst := mkConst e.newIndName (e.levelParams.map .param)
-      let inheritedCtors ← inheritedCtors.mapM fun ctor => do
-        let ctorType ← modMap ctor.type
-        unless !ctorType.hasMVar do
-          -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
-          throwError "Failed to translate constructor {ctor.name}: the translation generated holes. TODO expose a way to fill these holes."
-        let ctorType := ctorType.replace fun
-          | .fvar fvarId =>
-            if fvarId == newIndFVar.fvarId! then some newIndConst else none
-          | _ => none
-        return ({
-          name := ctor.name.replacePrefix ctor.induct e.newIndName
-          type := ctorType
-        } : Constructor)
-      let addedCtors := e.addedConstrs
-      return {
+    let baseInd := {
         name := e.newIndName
         type := e.type
-        ctors := inheritedCtors ++ addedCtors.toList
+        ctors := []
       }
+    e.extensions.foldlM (init := baseInd) fun indType ext => ext.modifyInductiveView e newIndFVar tempIndExt indType
 
 def isInductiveFamily (numParams : Nat) (indFVar : Expr) : TermElabM Bool := do
   let indFVarType ← inferType indFVar
@@ -197,7 +217,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
     checkNotAlreadyDeclared newIndName
     Term.withDeclName newIndName do
     Term.withoutSavingRecAppSyntax do
-    let (numParams, addedConstrs) ←
+    let (numParams, addedCtors) ←
       if declaredParams.size == 0 && baseNumParams > 0 then
         try
           pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
@@ -205,7 +225,11 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM ExtendedInd :=
           pure (0, (← elabExtendedCtors newShortIndName newIndName levelParams type 0 ctors))
       else
         pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
-    return { newIndName, numParams, levelParams, origType, type, indNames, addedConstrs }
+    let addIndExt := IndExtension.addInds { indNames := indNames }
+    let addCtorsExt := IndExtension.addCtors { lparams := levelParams
+                                               indType := type
+                                               addedCtors := addedCtors }
+    return { newIndName, numParams, levelParams, origType, type, extensions :=  [addIndExt,addCtorsExt] }
   | _ => throwUnsupportedSyntax
 
 def mkSizeOfName (name : Name) : Name :=
@@ -236,16 +260,58 @@ def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : 
   mkAuxName.forM fun mkAuxName =>
     mkAuxMappingIfValid (mkAuxName oldName) (mkAuxName newName)
 
+def IndExtension.AddInds.addInductiveMappings (extendedInductive : ExtendedInd) (indExtension : ModularExtension) (indExt : IndExtension.AddInds) : ModularM Unit := do
+  let newIndName := extendedInductive.newIndName
+  let newIndParams := extendedInductive.levelParams
+  let newIndLevels := newIndParams.map .param
+  let newRecName := mkRecName newIndName
+  for indName in indExt.indNames do
+    modifyMap (·.insert indName indExtension)
+    let indVal ← getConstInfoInduct indName
+    for ctorName in indVal.ctors do
+      let newCtorName := ctorName.replacePrefix indName newIndName
+      let ctorExt : ModularExtension := { expr := mkConst newCtorName newIndLevels
+                                          levelParams := newIndParams
+                                          numArgs := 0
+                                          numHoles := 0 }
+      modifyMap (·.insert ctorName ctorExt)
+      mkAuxMappings [mkInjName, mkInjEqName, mkNoConfusionName] ctorName newCtorName
+    let oldRecName := mkRecName indName
+    let oldRecVal ← getConstInfoRec oldRecName
+    let oldNumArgs := oldRecVal.type.getNumHeadForalls
+    let oldPrefix := oldRecVal.numParams + oldRecVal.numMotives
+    let tailStart := oldPrefix + oldRecVal.numMinors
+    let numAddedCtors := extendedInductive.addedCtors.size
+    let numExtraMinors := numAddedCtors * oldRecVal.numMotives
+    let oldArgBVar (i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
+    let holeBVar (i : Nat) : Expr := mkBVar (oldNumArgs + (numExtraMinors - 1 - i))
+    let mut recArgs : Array Expr := #[]
+    for i in [:tailStart] do
+      recArgs := recArgs.push (oldArgBVar i)
+    for i in [:numExtraMinors] do
+      recArgs := recArgs.push (holeBVar i)
+    for i in [tailStart:oldNumArgs] do
+      recArgs := recArgs.push (oldArgBVar i)
+    let recExt : ModularExtension := {
+      expr := mkAppN (mkConst newRecName (oldRecVal.levelParams.map .param)) recArgs
+      levelParams := oldRecVal.levelParams
+      numArgs := oldNumArgs
+      numHoles := numExtraMinors
+    }
+    modifyMap (·.insert oldRecName.eraseMacroScopes recExt)
+    let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
+    mkAuxMappings mkAuxNames indName newIndName
+
 def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
   let newIndName := extendedInductive.newIndName
   let newIndParams := extendedInductive.levelParams
   let newIndLevels := newIndParams.map .param
   let newRecName := mkRecName newIndName
-  let numAddedCtors := extendedInductive.addedConstrs.size
-  let indExt : ModularExtension := { expr := mkConst newIndName newIndLevels
-                                     levelParams := newIndParams
-                                     numArgs := 0
-                                     numHoles := 0 }
+  let indExtension : ModularExtension :=
+                                    { expr := mkConst newIndName newIndLevels
+                                      levelParams := newIndParams
+                                      numArgs := 0
+                                      numHoles := 0 }
   for indName in extendedInductive.indNames do
     modifyMap (·.insert indName indExt)
     -- maps := (indName.eraseMacroScopes,indExt)::maps
@@ -263,6 +329,7 @@ def addInductiveMappings (extendedInductive : ExtendedInd) : ModularM Unit := do
     let oldNumArgs := oldRecVal.type.getNumHeadForalls
     let oldPrefix := oldRecVal.numParams + oldRecVal.numMotives
     let tailStart := oldPrefix + oldRecVal.numMinors
+    let numAddedCtors := extendedInductive.addedCtors.size
     let numExtraMinors := numAddedCtors * oldRecVal.numMotives
     let oldArgBVar (i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
     let holeBVar (i : Nat) : Expr := mkBVar (oldNumArgs + (numExtraMinors - 1 - i))
