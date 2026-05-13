@@ -251,14 +251,11 @@ meta def elabModDef : ModularElab := fun stx =>
         let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
         for matchExt in matchExtensions do
-          withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.matchName} without adding new branches") do
             try
-              elabModMatchNoClauses newFunName matchExt
-              trace[Modular.Elab] "Elaboration of matcher {matchExt.matchName} succeeded without adding new branches"
-            catch | e => do
-              trace[Modular.Elab] m!"{e.toMessageData}"
-              -- continue
-        trace[Modular.Elab] "foo"
+              withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.matchName} without adding new branches") do
+                elabModMatchNoClauses newFunName matchExt
+                trace[Modular.Elab] "Elaboration of matcher {matchExt.matchName} succeeded without adding new branches"
+            catch | _ => continue
         let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then

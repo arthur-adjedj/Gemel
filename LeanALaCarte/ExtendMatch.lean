@@ -46,7 +46,7 @@ partial def Lean.Meta.Match.Pattern.modMap : Pattern → ModularM Pattern
   | Pattern.val e               => return Pattern.val (← _root_.modMap e)
   | Pattern.ctor n us ps fields => do
     -- TODO sanitize modmap extension API to make sure constructors are never extended by something other than a constructor
-    let k := if let some {expr := Expr.const k _,..} := (← getMap)[n]? then k else n
+    let k := if let Expr.const k _ := (← _root_.modMap (mkConst n us)) then k else n
     return Pattern.ctor k us (← ps.mapM _root_.modMap) (← fields.mapM modMap)
   | Pattern.as x p h            => return Pattern.as x (← p.modMap) h
   | Pattern.arrayLit t xs       => return Pattern.arrayLit (← _root_.modMap t) (← xs.mapM modMap)
@@ -64,7 +64,7 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
     trace[Modular.Match] "old fvarDecls : {fvarDecls.map fun ldecl => Expr.fvar ldecl.fvarId}"
     let modMappedLCtx ← getModMappedLCtx
     -- We have to maintain both the correct original pattern context (by bookkeeping the visited fvar decls) and the modmapped context (modMappedLCtx) for `modMap` to work correctly. Once that's done, the modmapped `fvarDecls` can be fetched out of the modmapped context.
-    let (modMappedLCtx,oldFvarDecls) ← fvarDecls.foldlM (init := (modMappedLCtx,[])) fun (modMappedLCtx, prevOldFvarDecls) lcdl => do
+    let (modMappedLCtx, oldFvarDecls) ← fvarDecls.foldlM (init := (modMappedLCtx,[])) fun (modMappedLCtx, prevOldFvarDecls) lcdl => do
       withExistingLocalDecls prevOldFvarDecls do
       withSetModMappedLCtx modMappedLCtx do
         let ty ← _root_.modMap lcdl.type
