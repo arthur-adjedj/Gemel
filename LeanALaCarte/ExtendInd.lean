@@ -282,21 +282,19 @@ def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : 
 def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let oldRecVal ← getConstInfoRec oldRecName
   let newRecVal ← getConstInfoRec newRecName
-  let oldArgBVar (oldNumArgs i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
-  let holeBVar (oldNumArgs numExtras i : Nat) : Expr := mkBVar (oldNumArgs + (numExtras - 1 - i))
   let mut recArgs : Array Expr := #[]
   let numOldMotives := oldRecVal.numMotives
-  let numNewMotives := newRecVal.numMinors - numOldMotives
-  for i in [:numOldMotives] do
-    recArgs := recArgs.push (oldArgBVar numOldMotives i)
-  for i in [:numNewMotives] do
-    recArgs := recArgs.push (holeBVar numOldMotives numNewMotives i)
+  let numNewMotives := newRecVal.numMotives - numOldMotives
   let numOldMinors := oldRecVal.numMinors
   let numNewMinors := newRecVal.numMinors - numOldMinors
+  for i in [:numOldMotives] do
+    recArgs := recArgs.push (mkBVar (numOldMotives - 1 - i))
+  for i in [:numNewMotives] do
+    recArgs := recArgs.push (mkBVar (numOldMotives + numOldMinors + numNewMotives - 1 - i))
   for i in [:numOldMinors] do
-    recArgs := recArgs.push (oldArgBVar numOldMotives i)
+    recArgs := recArgs.push (mkBVar (numOldMotives + numOldMinors - 1 - i))
   for i in [:numNewMinors] do
-    recArgs := recArgs.push (holeBVar numOldMotives numNewMotives i)
+    recArgs := recArgs.push (mkBVar (numNewMinors + numOldMotives + numOldMinors + numNewMotives - 1 - i))
   let numArgs := oldRecVal.numParams + oldRecVal.numMotives + oldRecVal.numMinors
   let numHoles := numNewMotives + numNewMinors
   let recExt : ModularExtension := {
@@ -305,6 +303,7 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
     numArgs
     numHoles
   }
+  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecVal.name recExt)
 
 def addCtorsMappings (oldIndName : Name) (extendedInductive : ExtendedInd)  : ModularM Unit := do

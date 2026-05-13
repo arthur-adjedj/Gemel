@@ -20,9 +20,10 @@ partial def modMapAux (e : Expr): ModularM Expr := do
   if let some ext := (← getMap)[fnName.eraseMacroScopes]? then
     --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
     unless ext.numArgs <= args.size do
-      return ← modMapAux (← Meta.etaExpand e)
+      let e ← Meta.etaExpand e
+      return (← withTraceNode `Modular.Subst (fun _ => return m!"Eta-expanding expression") do modMapAux e)
     let newArgs ← modMapArgs args
-    let res :=ext.expr
+    let res := ext.expr
       |>.instantiateLevelParams ext.levelParams lvls
       |>.instantiateRev newArgs[:ext.numArgs]
     let res ← modMapAux res
