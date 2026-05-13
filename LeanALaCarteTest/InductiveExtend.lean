@@ -74,6 +74,8 @@ modular
   #guard_msgs in
   #check_translation Nat
 
+-- set_option trace.Modular.Elab true
+-- set_option trace.Modular.Subst true
 modular
   inductive Natt2 extends Nat where
     | succ' : Natt2 → Natt2

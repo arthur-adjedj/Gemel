@@ -22,9 +22,10 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     unless ext.numArgs <= args.size do
       return ← modMapAux (← Meta.etaExpand e)
     let newArgs ← modMapArgs args
-    let res := ext.expr
+    let res :=ext.expr
       |>.instantiateLevelParams ext.levelParams lvls
       |>.instantiateRev newArgs[:ext.numArgs]
+    let res ← modMapAux res
     trace[Modular.Subst] m!"args instantiated : {res}"
     trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
     -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
