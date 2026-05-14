@@ -282,23 +282,23 @@ def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : 
 def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let oldRecVal ← getConstInfoRec oldRecName
   let newRecVal ← getConstInfoRec newRecName
-  let mut recArgs : Array Expr := #[]
+  let numParams := oldRecVal.numParams
+  assert! numParams = newRecVal.numParams
   let numOldMotives := oldRecVal.numMotives
-  let numNewMotives := newRecVal.numMotives - numOldMotives
   let numOldMinors := oldRecVal.numMinors
+  let numNewMotives := newRecVal.numMotives - numOldMotives
   let numNewMinors := newRecVal.numMinors - numOldMinors
-  for i in [:numOldMotives] do
-    recArgs := recArgs.push (mkBVar (numOldMotives - 1 - i))
-  for i in [:numNewMotives] do
-    recArgs := recArgs.push (mkBVar (numOldMotives + numOldMinors + numNewMotives - 1 - i))
-  for i in [:numOldMinors] do
-    recArgs := recArgs.push (mkBVar (numOldMotives + numOldMinors - 1 - i))
-  for i in [:numNewMinors] do
-    recArgs := recArgs.push (mkBVar (numNewMinors + numOldMotives + numOldMinors + numNewMotives - 1 - i))
-  let numArgs := oldRecVal.numParams + oldRecVal.numMotives + oldRecVal.numMinors
+  let numArgs := numParams + numOldMotives + numOldMinors + 1
   let numHoles := numNewMotives + numNewMinors
+  let mut recArgs : Array Expr := #[]
+  for i in [:numParams + numOldMotives + numOldMinors] do
+    recArgs := recArgs.push (mkBVar (numParams + numOldMotives + numOldMinors - i))
+  for i in [:numHoles] do
+    recArgs := recArgs.push (mkBVar (numParams + numOldMotives + numOldMinors + numHoles - i))
+  recArgs := recArgs.push (mkBVar 0)
+  let recExtExpr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
   let recExt : ModularExtension := {
-    expr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
+    expr := recExtExpr
     levelParams := oldRecVal.levelParams
     numArgs
     numHoles
