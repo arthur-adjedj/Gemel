@@ -3,7 +3,6 @@ module
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
 public meta import Lean.Elab.Tactic.Config
-import Lean.Elab.Tactic.Config
 public section
 
 open Lean Meta Elab Command Term
@@ -183,10 +182,10 @@ def elabModularCommandUsing (s : ModularElabState) (stx : Syntax) : List (KeyedD
         -- Prevent unsupported modular elaborators from accidentally accessing `Context.snap?`
         -- (e.g. via nested incrementality-enabled command elaboration).
         withoutModularCommandIncrementality (!(← isIncrementalElab elabFn.declName)) do
-        withInfoTreeContext
-          (mkInfoTree := fun trees =>
-            pure <| InfoTree.node (Info.ofCommandInfo { elaborator := elabFn.declName, stx := stx }) trees)
-          (elabFn.value stx))
+          withInfoTreeContext
+            (mkInfoTree := fun trees =>
+              pure <| InfoTree.node (Info.ofCommandInfo { elaborator := elabFn.declName, stx := stx }) trees)
+            (elabFn.value stx))
       (fun _ => do set s; elabModularCommandUsing s stx elabFns)
 
 mutual
@@ -246,8 +245,24 @@ deriving TypeName
 
 open Language in
 instance : ToSnapshotTree ModularBlockSnapshot where
-  toSnapshotTree s := SnapshotTree.mk s.toSnapshot #[]
+  toSnapshotTree s :=
+    let children := s.outputs.foldl (init := #[]) fun children (st, _) =>
+      children ++ st.snapshotTasks
+    SnapshotTree.mk s.toSnapshot children
 
+open Language in
+/-- Live snapshot used while a modular block is still elaborating. -/
+structure ModularBlockProgressSnapshot extends Snapshot where
+  /-- The live body task for the modular block. -/
+  body : SnapshotTask SnapshotTree
+  /-- The eventual finalized modular block snapshot. -/
+  result : SnapshotTask ModularBlockSnapshot
+deriving TypeName
+
+open Language in
+instance : ToSnapshotTree ModularBlockProgressSnapshot where
+  toSnapshotTree s :=
+    SnapshotTree.mk s.toSnapshot #[s.body, s.result.map (sync := true) toSnapshotTree]
 structure ModularSetup where
   name : Name := .anonymous
   imports : Array Name := #[]
@@ -263,50 +278,173 @@ def elabModularBlock : CommandElab := fun stx => do
   match stx with
   | `(command| modular $cfg:optConfig $[$m]* ) => do
     let cfg ← elabModularSetup cfg
+    let opts ← getOptions
     if let some snap := (← read).snap? then
-      let oldSnap? := do
-        let oldSnap ← snap.old?
-        oldSnap.val.get.toTyped? ModularBlockSnapshot
-      if snap.old?.isSome && oldSnap?.isNone then
-        snap.old?.forM (·.val.cancelRec)
-      let opts ← getOptions
+      let oldSnap? : Option ModularBlockSnapshot := do
+        let some old := snap.old? | none
+        let some oldProgress := old.val.get.toTyped? ModularBlockProgressSnapshot | none
+        pure oldProgress.result.task.get
       let mut map : ModularElabState := {}
       for name in cfg.imports do
         let some modmap := (← modularMaps.get)[name]?
           | throwError "Failed to import modular mapping {name}."
         map := ⟨map.map ∪ modmap.map⟩
-      let mut outputs : Array (Command.State × ModularElabState) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
       let mut reusedPrefix := true
+      let outputsRef ← IO.mkRef (Array.empty : Array (Command.State × ModularElabState))
+      let mapRef ← IO.mkRef map
+      let stateRef ← IO.mkRef (← get)
+      let runNestedCommand (cmd : Syntax) (curMap : ModularElabState) : CommandElabM (Command.State × ModularElabState) := do
+        if cmd.getKind.toString == "modular_run_command" then
+          if let some old := (← read).snap?.bind (·.old?) then
+            old.val.cancelRec
+          withTheReader Command.Context (fun ctx => { ctx with snap? := none }) do
+            elabCommand cmd[0]
+            let state := (← get)
+            return (state, curMap)
+        else
+          let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run curMap
+          let state := (← get)
+          return (state, newMap)
+
+      let mut commandTasks : Array (Language.SnapshotTask Language.SnapshotTree) := #[]
       for i in [:m.size] do
         let cmd : Syntax := m[i]!
-        let oldCmd? := oldCmds?.bind (·[i]?)
-        let oldOutput? := oldOutputs?.bind (·[i]?)
-        if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
-          match oldOutput? with
-          | some (oldState, oldMap) =>
-            set oldState
-            map := oldMap
-            outputs := outputs.push (oldState, oldMap)
-          | none =>
-            reusedPrefix := false
-            let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
-            map := newMap
-            outputs := outputs.push ((← get), map)
-        else
-          reusedPrefix := false
-          let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
-          map := newMap
-          outputs := outputs.push ((← get), map)
+        let prevTask? := commandTasks.back?
+        let taskStx := cmd
+        let reportingRange : Language.SnapshotTask.ReportingRange :=
+          Language.SnapshotTask.defaultReportingRange (some taskStx)
+        let commandTask ←
+          if reusedPrefix then
+            match oldCmds?, oldOutputs?, oldCmds?.bind (·[i]?), oldOutputs?.bind (·[i]?) with
+            | some oldCmds, some oldOutputs, some oldCmd, some oldOutput =>
+              if oldCmd.eqWithInfoAndTraceReuse opts cmd then
+                let (oldState, oldMap) := oldOutput
+                set oldState
+                let outputs ← outputsRef.get
+                outputsRef.set (outputs.push oldOutput)
+                mapRef.set oldMap
+                stateRef.set oldState
+                let oldTree : Language.SnapshotTree := {
+                  element := { diagnostics := .empty }
+                  children := oldState.snapshotTasks
+                }
+                pure {
+                  stx? := some taskStx
+                  reportingRange := reportingRange
+                  cancelTk? := none
+                  task := .pure oldTree
+                }
+              else
+                reusedPrefix := false
+                let cancelTk ← IO.CancelToken.new
+                let commandBody ←
+                  Command.wrapAsyncAsSnapshot (cancelTk? := cancelTk) fun _ => do
+                    if let some prevTask := prevTask? then
+                      let prevTree := prevTask.task.get
+                      let prevWait ← prevTree.waitAll
+                      let _ := prevWait.get
+                    let prevState : Command.State := ← stateRef.get
+                    set prevState
+                    let curMap : ModularElabState := ← mapRef.get
+                    let (state, newMap) ← runNestedCommand cmd curMap
+                    set state
+                    let outputs ← outputsRef.get
+                    outputsRef.set (outputs.push (state, newMap))
+                    mapRef.set newMap
+                    stateRef.set state
+                pure {
+                  stx? := some taskStx
+                  reportingRange := reportingRange
+                  cancelTk? := some cancelTk
+                  task := (← BaseIO.asTask (commandBody ()))
+                }
+            | _, _, _, _ =>
+              reusedPrefix := false
+              let cancelTk ← IO.CancelToken.new
+              let commandBody ←
+                Command.wrapAsyncAsSnapshot (cancelTk? := cancelTk) fun _ => do
+                  if let some prevTask := prevTask? then
+                    let prevTree := prevTask.task.get
+                    let prevWait ← prevTree.waitAll
+                    let _ := prevWait.get
+                  let prevState : Command.State := ← stateRef.get
+                  set prevState
+                  let curMap : ModularElabState := ← mapRef.get
+                  let (state, newMap) ← runNestedCommand cmd curMap
+                  set state
+                  let outputs ← outputsRef.get
+                  outputsRef.set (outputs.push (state, newMap))
+                  mapRef.set newMap
+                  stateRef.set state
+              pure {
+                stx? := some taskStx
+                reportingRange := reportingRange
+                cancelTk? := some cancelTk
+                task := (← BaseIO.asTask (commandBody ()))
+              }
+          else
+            let cancelTk ← IO.CancelToken.new
+            let commandBody ←
+              Command.wrapAsyncAsSnapshot (cancelTk? := cancelTk) fun _ => do
+                if let some prevTask := prevTask? then
+                  let prevTree := prevTask.task.get
+                  let prevWait ← prevTree.waitAll
+                  let _ := prevWait.get
+                let prevState : Command.State := ← stateRef.get
+                set prevState
+                let curMap : ModularElabState := ← mapRef.get
+                let (state, newMap) ← runNestedCommand cmd curMap
+                set state
+                let outputs ← outputsRef.get
+                outputsRef.set (outputs.push (state, newMap))
+                mapRef.set newMap
+                stateRef.set state
+            pure {
+              stx? := some taskStx
+              reportingRange := reportingRange
+              cancelTk? := some cancelTk
+              task := (← BaseIO.asTask (commandBody ()))
+            }
+        commandTasks := commandTasks.push commandTask
+      let bodyTree : Language.SnapshotTree := {
+        element := { diagnostics := .empty }
+        children := commandTasks
+      }
+      let bodyTask : Language.SnapshotTask Language.SnapshotTree :=
+        .finished (some stx) bodyTree
+      let resultTask : Language.SnapshotTask ModularBlockSnapshot := {
+        stx? := some stx
+        reportingRange := .skip
+        cancelTk? := none
+        task := (← BaseIO.asTask do
+          let bodyTree := bodyTask.task.get
+          let waitAllTask ← bodyTree.waitAll
+          let _ := waitAllTask.get
+          let outputs ← outputsRef.get
+          let curMap  ← mapRef.get
+          let messageLog := outputs.foldl (init := .empty) fun msgs (st, _) =>
+            msgs ++ st.messages
+          let diagnostics ← Language.Snapshot.Diagnostics.ofMessageLog messageLog
+          let finalSnapshot : ModularBlockSnapshot := {
+            diagnostics := diagnostics
+            cmds := m.map (·.raw)
+            outputs
+          }
+          return finalSnapshot)
+      }
       snap.new.resolve <| .ofTyped {
         diagnostics := .empty
-        cmds := m.map (·.raw)
-        outputs
-        : ModularBlockSnapshot
+        body := bodyTask
+        result := resultTask
+        : ModularBlockProgressSnapshot
       }
+      let _ := resultTask.task.get
+      set (← stateRef.get)
       if !cfg.name.isAnonymous then
-        modularMaps.modify (Std.HashMap.insert · cfg.name map)
+        let curMap : ModularElabState := ← mapRef.get
+        modularMaps.modify (Std.HashMap.insert · cfg.name curMap)
     else
       let mut map : ModularElabState := {}
       for name in cfg.imports do
@@ -319,9 +457,8 @@ def elabModularBlock : CommandElab := fun stx => do
   | _ => throwUnsupportedSyntax
 
 initialize
-  registerTraceClass `Modular (inherited := true)
-  registerTraceClass `Modular.Elab (inherited := true)
-  registerTraceClass `Modular.Subst (inherited := true)
-  registerTraceClass `Modular.Match (inherited := true)
+  registerTraceClass `Modular.Elab
+  registerTraceClass `Modular.Subst
+  registerTraceClass `Modular.Match
 
 end
