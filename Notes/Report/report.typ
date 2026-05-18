@@ -1,9 +1,15 @@
+#import "@preview/curryst:0.5.1": rule, prooftree
+#import "@preview/lemmify:0.1.8": *
 
-#set text(size:9pt)
+#let(theorem, lemma, example, proof, rules: thm-rules) = default-theorems("thm-group", lang: "en", thm-numbering: thm-numbering-linear)
+#show: thm-rules
+
+// #set text(size:9pt)
 #set par(first-line-indent: 1.5em, justify: true)
 #set cite(form: "prose", style: "citation-style.csl",)
 #set quote(block: true)
 #show quote: set pad(top : -1.5em, bottom : -0.5em)
+#show math.equation.where(block: true): set par(leading: 2em)
 #let aa(body) = text(fill:red, "AA: " + body)
 #let yf(body) = text(fill:purple, "YF: " + body)
 #let nt(body) = text(fill:red.lighten(20%), "NT: " + body)
@@ -63,6 +69,69 @@ None of these systems, independently of whether they use encodings or the meta-p
 
 == Partial mappings
 
+#aa[TODO Add universes]
+
+#let univ = $cal(U)$
+
+$t, A, B, f &::= 
+    x &#text[(variable)]\ &space 
+  | d &#text[(constant)]\ &space
+  | m_i  &#text[(metavariable)] \ &space
+  | f space t &#text[(application)]\ &space 
+  | λ x : A. t &#text[(abstraction)]\ &space
+  | (x : A) -> B &#text[($Pi$-type)] \ &space
+  | univ_i &#text[(universe)]
+$
+
+#let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
+
+#let modmapJudgement = [#block(inset: 0.3em,stroke: 0.1em)[$Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$] (In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)
+$
+prooftree(
+  rule(Sigma | Phi | Theta | Gamma => Delta tack.r univ_i => univ_i : univ_(i+1) => univ_(i+1))
+)
+space
+prooftree(
+  rule(
+    Sigma | Phi | Theta | Gamma => Delta tack.r x => x : A => A' ,
+    (x : A) in Gamma,
+    (x : A') in Delta,
+  )
+)
+\
+prooftree(
+  rule(
+    Sigma | Phi | wk(Delta, Theta) | Gamma => Delta tack.r d => t : A => A' ,
+    ((d : A) mapsto (Theta,t : A')) in Phi,
+  )
+)
+\
+prooftree(
+  rule(
+    Sigma | Phi | Theta_1 union Theta_2 | Gamma => Delta tack.r f space t => f' space t' : B[x := t] => B'[x := t'],
+    Sigma | Phi | Theta_1 | Gamma => Delta tack.r f => f' : ((x : A) -> B) => ((x : A') -> B'),
+    Sigma | Phi | Theta_2 | Gamma => Delta tack.r t => t' : A => A'
+  )
+)
+\
+prooftree(
+  rule(
+    Sigma | Phi | Theta | Gamma => Delta tack.r (λ x : A. t) => (λ x : A'. t') : ((x : A) -> B) => ((x : A') -> B'),
+    Sigma | Phi | Theta | (Gamma,x : A) => (Delta, x : A') tack.r t => t' : B => B')
+)
+\
+prooftree(
+  rule(
+    Sigma | Phi | Theta | Gamma => Delta tack.r ((x : A) -> B) => ((x : A') -> B') : univ_i => univ_i,
+    Sigma | Phi | Theta | (Gamma,x : A) => (Delta, x : A') tack.r t => t' : B => B')
+)
+$]
+
+#figure(modmapJudgement, caption: [Judgement rules for mappings])
+
+#theorem[If for all $((d : A) mapsto (Theta,t : A')) in Phi$, we have (1) $Sigma | epsilon | epsilon tack.r d : A$, (2) $Sigma | Theta | epsilon tack.r t : A'$ and (3) $Sigma | Phi | Theta | epsilon => epsilon tack.r A => A' : univ_i => univ_i$ for some $i$, then for all $Gamma, t, A$ s.t $Sigma | Gamma tack.r t : A$, there exists $Delta,t',A'$ s.t $Sigma | Phi | Theta | Delta tack.r t' : A'$ and $Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$]
+Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
+#aa[TODO: actually prove this #emoji.face.woozy]
 == Inductive extensions
 
 #aa[Mention all the various auxiliary declarations that Lean uses internally and that need to be mapped appropriately]
