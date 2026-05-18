@@ -121,7 +121,8 @@ where
           return true
       return false
 
-def modMap (e : Expr) : ModularM Expr := do
+def modMap (e : Expr) : ModularM Expr :=
+  prependError m!"Failed to translate expression {indentExpr e}:" do
   let e ← modMapAux e
   -- withModMappedLCtx do Meta.check e
   return e
