@@ -64,24 +64,34 @@ On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programmin
 None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 
 = Extensions
+
+This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate informations "after the fact".
+
 #aa[TODO section intro]
 #aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
 
 == Partial mappings
 
-#aa[TODO Add universes]
+This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
+
+First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
 
 #let univ = $cal(U)$
-
-$t, A, B, f &::= 
+#let syntax_def = [
+$"Terms" : t, f, A, B &::= 
     x &#text[(variable)]\ &space 
   | d &#text[(constant)]\ &space
-  | m_i  &#text[(metavariable)] \ &space
+  | m  &#text[(metavariable)] \ &space
   | f space t &#text[(application)]\ &space 
   | λ x : A. t &#text[(abstraction)]\ &space
   | (x : A) -> B &#text[($Pi$-type)] \ &space
   | univ_i &#text[(universe)]
-$
+$]
+
+#figure(syntax_def,caption: "Syntax of our type theory")
+The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the partial maps.
+
+We define a judgement $Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$ encompassing the behaviour of the partial mapping in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the partially mapped term, as well as the type of both the original term and the partially mapped one. The partial mapping acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their partial mapping. Furthermore, when partially mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
 
 #let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
 
@@ -107,10 +117,11 @@ prooftree(
 )
 \
 prooftree(
-  rule(
-    Sigma | Phi | Theta_1 union Theta_2 | Gamma => Delta tack.r f space t => f' space t' : B[x := t] => B'[x := t'],
-    Sigma | Phi | Theta_1 | Gamma => Delta tack.r f => f' : ((x : A) -> B) => ((x : A') -> B'),
-    Sigma | Phi | Theta_2 | Gamma => Delta tack.r t => t' : A => A'
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    [$Sigma | Phi | Theta_1 union Theta_2 | Gamma => Delta tack.r f space t => f' space t' : B[x := t] => B'[x := t']$],
+    [$Sigma | Phi | Theta_1 | Gamma => Delta tack.r f => f' : ((x : A) -> B) => ((x : A') -> B')$],
+    [$Sigma | Phi | Theta_2 | Gamma => Delta tack.r t => t' : A => A'$]
   )
 )
 \
@@ -129,10 +140,44 @@ $]
 
 #figure(modmapJudgement, caption: [Judgement rules for mappings])
 
+The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
 #theorem[If for all $((d : A) mapsto (Theta,t : A')) in Phi$, we have (1) $Sigma | epsilon | epsilon tack.r d : A$, (2) $Sigma | Theta | epsilon tack.r t : A'$ and (3) $Sigma | Phi | Theta | epsilon => epsilon tack.r A => A' : univ_i => univ_i$ for some $i$, then for all $Gamma, t, A$ s.t $Sigma | Gamma tack.r t : A$, there exists $Delta,t',A'$ s.t $Sigma | Phi | Theta | Delta tack.r t' : A'$ and $Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$]
 Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
 #aa[TODO: actually prove this #emoji.face.woozy]
 == Inductive extensions
+
+With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
+First, let us look at the shape of an inductive type. Inductive types are shaped as follows:
+
+#let ctor = $bold("ctor")$
+#let motive = $bold("motive")$
+#let minor = $bold("minor")$
+$bold("inductive") "Ind"  [(p_j : P_j)]_j : [(i_k : I_k)]_k -> univ bold("where")\
+space | ctor_1 : [(a_(1,l) : A_(1,l))]_l → I space [p_j]_j space [d_(1,k)]_k \
+space space space space ...\
+space | ctor_n : [(a_(n,l) : A_(n,l))]_l → I space [p_j]_j space [d_(n,k)]_k $
+
+An inductive (family of) type(s) is composed of a number of different components: A list of parameters which constitute a context, a telescope of indices over that context of parameters, and a list of constructor. Constructor contain a telescope of fields living over the parameter context, and instantiate the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
+#align(center)[
+#grid(columns: 2)[
+```lean4
+inductive Nat : 𝒰︀ where   
+  | Z : Nat
+  | S : Nat -> Nat
+```][
+```lean4
+inductive Vec (A : 𝒰︀) : Nat -> 𝒰︀ where
+  | nil : Vec A Z
+  | cons : (n : Nat) -> A -> Vec A n -> Vec A (S n)
+```]
+]
+
+There are many apparent ways in which an inductive type may be modified/extended, i.e by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
+consider an inductive `A` of type $[(p_j : P_j)]_j -> [(i_k : I_k)]_k -> univ$ with constructors $[ctor_n]_n$, constructing a new type $B$ with the same telescope of parameters/indices, as well as the same constructors + a new constructor $ctor_(n+1)$ of appropriate shape (in practice, $B$ doesn't have "the same" parameters/indices/constructors, but rather correctly partially mapped ones), we may then partially map both $A$ to $B$ and its constructors to $B$'s. The last apparent missing piece to this translation is the recursor. A recursor has the shape $"A.rec" : [(p_j : P_j)]_j -> (motive : [(i_k : I_k)]_k -> A -> univ) -> [(minor_n : ... -> motive (ctor_n ...))]_n -> [(i_k : I_k)]_k -> (a : A [p_j]_j [i_k]_k) -> motive [i_k]_k a$ 
+As such, we can map this recursor to $B."rec"$ by simply mapping all the arguments straightforwardly, and leaving a metavariable hole for the minor of the new constructor:
+
+$"A.rec" => "fun" [p_j]_j motive [minor_n]_n [i_k]_k a => "B.rec"  [(p_j : P_j)]_j motive [minor_n]_n space ?m space [i_k]_k space a$.
+
 
 #aa[Mention all the various auxiliary declarations that Lean uses internally and that need to be mapped appropriately]
 == Definition extensions
