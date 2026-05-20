@@ -67,6 +67,8 @@ where
   traverse e: ModularM Expr := match e with
     | .sort _
     | .lit _ --What if you extend Nat/String ? you probably want literals to be translated accordingly, but that's an edge-case not worth thinking about for now
+    -- Shouldn't metavariables be handled specially, i.e by modmapping their metavar context ? This might be an issue when the fixpoint does not end in one pass and instead translates again the type of a metavariable produced previously.
+    -- TODO investigate
     | .bvar _ | .fvar _ | .mvar _ => pure e
     | .proj tyName idx struct => do
       if let some _ext := (← getMap)[tyName.eraseMacroScopes]? then
