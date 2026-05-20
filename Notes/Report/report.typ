@@ -1,4 +1,10 @@
 #import "@preview/curryst:0.5.1": rule, prooftree
+#let rule-set(column-gutter: 3em, row-gutter: 5em, ..rules) = {
+  set par(leading: row-gutter)
+  block(rules.pos().map(box).join(h(column-gutter, weak: true)))
+  v(row-gutter)
+}
+
 #import "@preview/lemmify:0.1.8": *
 
 #let(theorem, lemma, example, proof, rules: thm-rules) = default-theorems("thm-group", lang: "en", thm-numbering: thm-numbering-linear)
@@ -77,71 +83,88 @@ This section makes a partial attempt at justifying the implementation of partial
 First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
 
 #let univ = $cal(U)$
+#let lam(x,A,t) = $λ (#x : #A) mapsto #t$
+#let pi(x,A,B) = $(#x : #A) -> #B$
+#let app(f,t) = $f space t$
 #let syntax_def = [
 $"Terms" : t, f, A, B &::= 
     x &#text[(variable)]\ &space 
   | d &#text[(constant)]\ &space
   | m  &#text[(metavariable)] \ &space
-  | f space t &#text[(application)]\ &space 
-  | λ x : A. t &#text[(abstraction)]\ &space
-  | (x : A) -> B &#text[($Pi$-type)] \ &space
+  | app(f,t) &#text[(application)]\ &space 
+  | lam(x,A,t) &#text[(abstraction)]\ &space
+  | pi(x,A,B) &#text[($Pi$-type)] \ &space
   | univ_i &#text[(universe)]
 $]
+#let modmap(Sigma : $Sigma$,Phi : $Phi$,Theta,Gamma,Delta,t1,t2,A1,A2) = $Sigma | Phi | Theta | Gamma => Delta tack.r t1 => t2 : A1 => A2$
 
 #figure(syntax_def,caption: "Syntax of our type theory")
 The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the partial maps.
 
-We define a judgement $Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$ encompassing the behaviour of the partial mapping in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the partially mapped term, as well as the type of both the original term and the partially mapped one. The partial mapping acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their partial mapping. Furthermore, when partially mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
+We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the partial mapping in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the partially mapped term, as well as the type of both the original term and the partially mapped one. The partial mapping acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their partial mapping. Furthermore, when partially mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
 
 #let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
+#let cons(Gamma,x,A) = $Gamma,x : A$
 
-#let modmapJudgement = [#block(inset: 0.3em,stroke: 0.1em)[$Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$] (In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)
-$
-prooftree(
-  rule(Sigma | Phi | Theta | Gamma => Delta tack.r univ_i => univ_i : univ_(i+1) => univ_(i+1))
-)
-space
-prooftree(
+#let modmap_univ = $prooftree(
+  rule(modmap(Theta, Gamma,Delta ,univ_i,univ_i, univ_(i+1), univ_(i+1)))
+)$
+#let modmap_var = $prooftree(
   rule(
-    Sigma | Phi | Theta | Gamma => Delta tack.r x => x : A => A' ,
+    modmap(Theta, Gamma,Delta ,x, x, A, A') ,
     (x : A) in Gamma,
     (x : A') in Delta,
   )
-)
-\
-prooftree(
+)$
+#let modmap_const = $prooftree(
   rule(
-    Sigma | Phi | wk(Delta, Theta) | Gamma => Delta tack.r d => t : A => A' ,
+    modmap( wk(Delta, Theta), Gamma, Delta, d, t, A, A') ,
     ((d : A) mapsto (Theta,t : A')) in Phi,
   )
-)
-\
-prooftree(
+)$
+#let modmap_mvar = $prooftree(
+  rule(
+    modmap(Theta, Gamma_1, Delta_1, m, m, A, A') ,
+    (m : (Gamma_2,A)) in Theta,
+    Gamma_2 subset Gamma_1,
+    Delta_2 subset Delta_1,
+    modmap(Theta,Gamma_2,Delta_2,A,A',univ_i,univ_i)
+  )
+)$
+#let modmap_app = $prooftree(
   #rule(
     name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
-    [$Sigma | Phi | Theta_1 union Theta_2 | Gamma => Delta tack.r f space t => f' space t' : B[x := t] => B'[x := t']$],
-    [$Sigma | Phi | Theta_1 | Gamma => Delta tack.r f => f' : ((x : A) -> B) => ((x : A') -> B')$],
-    [$Sigma | Phi | Theta_2 | Gamma => Delta tack.r t => t' : A => A'$]
+    [$modmap(Theta_1 union Theta_2, Gamma, Delta, app(f, t), app(f', t'), B[x := t], B'[x := t'])$],
+    [$modmap(Theta_1 , Gamma , Delta, f, f', pi(x, A,B),pi(x,A',B'))$],
+    [$modmap(Theta_2, Gamma,Delta ,t,t', A, A')$]
   )
-)
-\
-prooftree(
-  rule(
-    Sigma | Phi | Theta | Gamma => Delta tack.r (λ x : A. t) => (λ x : A'. t') : ((x : A) -> B) => ((x : A') -> B'),
-    Sigma | Phi | Theta | (Gamma,x : A) => (Delta, x : A') tack.r t => t' : B => B')
-)
-\
-prooftree(
-  rule(
-    Sigma | Phi | Theta | Gamma => Delta tack.r ((x : A) -> B) => ((x : A') -> B') : univ_i => univ_i,
-    Sigma | Phi | Theta | (Gamma,x : A) => (Delta, x : A') tack.r t => t' : B => B')
-)
-$]
+)$
+#let modmap_pi = $prooftree(
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    $modmap(Theta_1 union Theta_2, Gamma, Delta, pi(x, A,B),pi(x,A',B'), univ_max(i,j), univ_max(i,j))$,
+    $modmap(Theta_1,Gamma,Delta,A,A',univ_i,univ_i)$,
+    $modmap(Theta_2,(cons(Gamma,x, A)),(cons(Delta,x, A')),B,B',univ_j,univ_j))$
+))$
+#let modmap_lam = $prooftree(
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    $modmap(Theta_1 union Theta_2, Gamma, Delta, (lam(x, A, t)), (lam(x,A',t')), pi(x, A,B),pi(x,A',B'))$,
+    $modmap(Theta_1,Gamma,Delta,pi(x, A,B),pi(x,A',B'), univ_i, univ_i)$,
+    $modmap(Theta_2, (cons(Gamma,x, A)), (cons(Delta, x, A')), t, t' ,B, B'))$,
+))$
+#let modmapJudgementSet = [#grid(columns: 2,column-gutter: 2em)[#block(inset: 0.3em,stroke: 0.1em)[$modmap(Theta, Gamma,Delta ,t,t', A, A')$]][(In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)]
+#aa[TODO fix spacing]
 
-#figure(modmapJudgement, caption: [Judgement rules for mappings])
+#rule-set(modmap_univ,modmap_var,modmap_const,modmap_mvar,modmap_app,modmap_pi,modmap_lam)
+
+
+]
+
+#figure(modmapJudgementSet, caption: [Judgement rules for mappings])
 
 The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
-#theorem[If for all $((d : A) mapsto (Theta,t : A')) in Phi$, we have (1) $Sigma | epsilon | epsilon tack.r d : A$, (2) $Sigma | Theta | epsilon tack.r t : A'$ and (3) $Sigma | Phi | Theta | epsilon => epsilon tack.r A => A' : univ_i => univ_i$ for some $i$, then for all $Gamma, t, A$ s.t $Sigma | Gamma tack.r t : A$, there exists $Delta,t',A'$ s.t $Sigma | Phi | Theta | Delta tack.r t' : A'$ and $Sigma | Phi | Theta | Gamma => Delta tack.r t => t' : A => A'$]
+#theorem[If for all $((d : A) mapsto (Theta,t : A')) in Phi$, we have (1) $Sigma | epsilon | epsilon tack.r d : A$, (2) $Sigma | Theta | epsilon tack.r t : A'$ and (3) $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, then for all $Gamma, t, A$ s.t $Sigma | Gamma tack.r t : A$, there exists $Delta,t',A'$ s.t $Sigma | Phi | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
 Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
 #aa[TODO: actually prove this #emoji.face.woozy]
 == Inductive extensions
@@ -173,11 +196,20 @@ inductive Vec (A : 𝒰︀) : Nat -> 𝒰︀ where
 ]
 
 There are many apparent ways in which an inductive type may be modified/extended, i.e by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
-consider an inductive `A` of type $[(p_j : P_j)]_j -> [(i_k : I_k)]_k -> univ$ with constructors $[ctor_n]_n$, constructing a new type $B$ with the same telescope of parameters/indices, as well as the same constructors + a new constructor $ctor_(n+1)$ of appropriate shape (in practice, $B$ doesn't have "the same" parameters/indices/constructors, but rather correctly partially mapped ones), we may then partially map both $A$ to $B$ and its constructors to $B$'s. The last apparent missing piece to this translation is the recursor. A recursor has the shape $"A.rec" : [(p_j : P_j)]_j -> (motive : [(i_k : I_k)]_k -> A -> univ) -> [(minor_n : ... -> motive (ctor_n ...))]_n -> [(i_k : I_k)]_k -> (a : A [p_j]_j [i_k]_k) -> motive [i_k]_k a$ 
-As such, we can map this recursor to $B."rec"$ by simply mapping all the arguments straightforwardly, and leaving a metavariable hole for the minor of the new constructor:
+consider an inductive A of type $[(p_j : P_j)]_j -> [(i_k : I_k)]_k -> univ$ with constructors $[ctor_n]_n$, constructing a new type B with the same telescope of parameters/indices, as well as the same constructors + a new constructor $ctor_(n+1)$ of appropriate shape (in practice, B doesn't have "the same" parameters/indices/constructors, but rather correctly partially mapped ones), we may then partially map both A to B and its constructors to B's. The last apparent missing piece to this translation is the recursor. A recursor has the shape $"A.rec" : [(p_j : P_j)]_j -> (motive : [(i_k : I_k)]_k -> A -> univ) -> [(minor_n : ... -> motive (ctor_n ...))]_n -> [(i_k : I_k)]_k -> (a : A [p_j]_j [i_k]_k) -> motive [i_k]_k a$ 
+As such, we can map this recursor to $"B.rec"$ by simply mapping all the arguments straightforwardly, and leaving a metavariable hole for the minor of the new constructor:
 
-$"A.rec" => "fun" [p_j]_j motive [minor_n]_n [i_k]_k a => "B.rec"  [(p_j : P_j)]_j motive [minor_n]_n space ?m space [i_k]_k space a$.
+$\
+"A.rec" => lambda [p_j]_j motive [minor_n]_n [i_k]_k a mapsto.long "B.rec"  [(p_j : P_j)]_j motive [minor_n]_n space ?m space [i_k]_k space a$
 
+Using this, we provide a new Lean command which, given an inductive and new constructors, constructs another inductive type which extends the original one with these new constructors, adding the relevant mappings between the two:
+```lean
+inductive Var (α : Type) where
+  | var : α → Var α
+inductive Term α extends Var α where
+  | lam : Term A → Term A
+  | app : Term A → Term A → Term A
+``` 
 
 #aa[Mention all the various auxiliary declarations that Lean uses internally and that need to be mapped appropriately]
 == Definition extensions
@@ -260,7 +292,7 @@ $"A.rec" => "fun" [p_j]_j motive [minor_n]_n [i_k]_k a => "B.rec"  [(p_j : P_j)]
 // #aa[We don't want to make a feature for a case-study, instead we have this problem in formalisations that they're not modular, and want to fix those (#eg horizontal modularity)]
 // #yf[We're missing a concrete workplan: We will do X, then Y, then Z.] \
 // #aa[(pre). Pretend lean à la carte is done by the time phd starts]
-// #aa[1. Horizontal modularity is strictly necessary for #eg the lambda-cube, namely for System F, so lambda-cube as a case study and making horizontal modularity is the first step]
+// #aa[1. Horizontal modularity is strictly necessary for #eg the lam-cube, namely for System F, so lam-cube as a case study and making horizontal modularity is the first step]
 // #aa[2. Modularisation of non-modular developments, modularly extending an existing formalisation, #eg Strata]
 // #aa[Ask yaël about potential issues with structures in Lean]
 // #aa[3. Look into semantics encodings, #eg impredicative encoding, look into co-inductive predicates using that]
@@ -268,7 +300,7 @@ $"A.rec" => "fun" [p_j]_j motive [minor_n]_n [i_k]_k a => "B.rec"  [(p_j : P_j)]
 // #aa[Writing down here as a temptative plan to discuss on monday before really redacting: 
 // - First, dig deeper into the existing systems to wage the pros/cons of each, and make a list of wanted features/design plans
 // - Experiment with toy implementations of a modular system, #eg a Lean version of Coq à la Carte that tries to implement basic expected features
-// - Choose a case-study (#eg the lambda-cube) and start work on this case-study with the help of the toy implementation (BTW I couldn't find any full formalisation of CoC in Coq (ignoring MetaRocq and their SN axiomatisation and Barras' incomplete work), so unless I'm mistaken, this "case study" could serve as a contribution of its own, ignoring modularity concerns)
+// - Choose a case-study (#eg the lam-cube) and start work on this case-study with the help of the toy implementation (BTW I couldn't find any full formalisation of CoC in Coq (ignoring MetaRocq and their SN axiomatisation and Barras' incomplete work), so unless I'm mistaken, this "case study" could serve as a contribution of its own, ignoring modularity concerns)
 // - Refine the implementation along the way
 // - ..?
 // ]
