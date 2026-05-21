@@ -225,8 +225,15 @@ The initial idea is simple:
 However, all of this turns out to quickly become very complex, mainly because the way lean declarations are elaborated is in itself very complex. This can be clearly observed by looking at how much a user-written declaration differs from what it ends up being elaborated to. #aa[TODO example that's ugly but not too much ?].
 Two big reasons why the elaboration is so complex are respectively how Lean handles recursion and pattern-matching.
 #aa[Mention that the holes can be solved in the same way tactic holes are solved.]
+
 === Recursive functions
 
+Other proof-assistants like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
+
+Because of this, directly partially mapping the value of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form 
+`
+(a_1 -> A_1) -> ... -> (a_n -> A_n)  -> foo a_1 ... a_n = <foo's original definition>`
+As such, rather than use the original value of a definition, we may instead partial map the right-hand side of its `eq_def` whenever available, and then reuse the existing pipelines Lean uses to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. In particular, this allows us turn an originally non-recursive function into a recursive one if needed (e.g `Term.repr` example in the next section), or even change the termination measure that was originally used to adapt it to the new extended function.
 
 === Extending pattern-matches
 
