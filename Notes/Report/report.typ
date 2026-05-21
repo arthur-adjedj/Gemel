@@ -214,8 +214,75 @@ inductive Term α extends Var α where
 #aa[Mention all the various auxiliary declarations that Lean uses internally and that need to be mapped appropriately]
 == Definition extensions
 
-=== Extending matchers
-#aa[Explain that the internal implementation of matchers does not reflect the kind of extension you would want to see in practice, mention auto-generalizations, and how they are actually handled in practice.]
+With inductive types interacting correcting with partial mappings, we now look into how declarations (i.e definitions and theorems) can be partially mapped correctly. 
+The initial idea is simple: 
+- take a given declaration
+- partially map its term
+- ask the user to fill-in the generated holes
+- add the newly completed declaration to the environment
+- map the new declaration to the old one
+
+However, all of this turns out to quickly become very complex, mainly because the way lean declarations are elaborated is in itself very complex. This can be clearly observed by looking at how much a user-written declaration differs from what it ends up being elaborated to. #aa[TODO example that's ugly but not too much ?].
+Two big reasons why the elaboration is so complex are respectively how Lean handles recursion and pattern-matching.
+#aa[Mention that the holes can be solved in the same way tactic holes are solved.]
+=== Recursive functions
+
+
+=== Extending pattern-matches
+
+Match expressions are a ubiquitous feature of modern functional languages, and proof assistants make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. Lean however does diverge from this tradition a bit. For regular users, it may appear as though Lean does have match expressions: there are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax too! However, they are in fact not part of the abstract syntax, it's all smoke and mirrors! Indeed, when encountering a `match`-expression, Lean elaborates this match down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
+```lean
+def is_zero : Nat → Bool
+  | 0 => true
+  | n + 1 => false
+```
+The shape of the match get elaborated into an auxiliary function 
+```lean
+is_zero.match_1 : (motive : Nat → Sort u_1) → (x : Nat) → (Unit → motive 0) → ((n : Nat) → motive n.succ) → motive x
+```
+
+The function is then applied with the right arguments to explicit 1. the return type (called here `motive`) 2. the discriminant (`x`) and 3. the righ-hand-side of each branch:
+```lean
+def is_zero : Nat → Bool :=
+fun x => is_zero.match_1 (fun x => Bool) x (fun _ => true) (fun n => false)
+``` 
+
+In practice however, the pretty-printer recognises when an application has a match expression as its head, and thus prints it back to the user as a `match`. 
+
+When it comes to extending matches, we are now presented with two options: 
+- Matches are simply encoded using recursors, we may simply partially map a given matcher and ask users to fill in the holes in it. 
+- Extending matches amounts to adding new branches to it such that it covers the relevant constructors in the extended inductive type. As such, we may ask users to write down the relevant branches, in a syntax similar to how normal matches are written.
+
+The second option turns out to be the most ergonomic, although it makes the implementation harder. In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotation (i.e reconstructing concrete syntax from the original abstract), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations. Take the previous example of inductive extensions where `Term` extends `Var`. Consider a function for printing a term of the type:
+```lean
+def Var.repr {α} [ToString α] : Var α → String
+  | var x => s!"#{x}"
+```
+We may now extend this function for `Term` as such:
+```lean
+mod def Term.repr extends Var.repr where
+  matcher match_1 with
+  | app f x => s!"{Term.repr f} {Term.repr x}"
+  | lam f => s!"λ {Term.repr f}"
+```
+In practice having matches be handled specially makes a clear distinction between the holes generated for matches and those generated by explicit uses of recursors, which usually only appear in proof terms generated by tactic calls such as `induction`. This in essence means our syntax for modular definitions offers a clear separation of concerns between proof holes, solved by tactics, and non-proof holes, solved by completing match branches
+```mod def foo extends bar where
+    <matchers>
+  finally
+    <tactics>
+```
+This sort of distinction appears is not new. Indeed `where finally` was already a feature in Lean, and could be used to fill-in proof holes after the fact:
+```lean
+def Vec.tl (v : Vec α (n+1)) : Vec α n :=
+  match h : n+1, v with
+    | 0, zero => nomatch h
+    | k+1, succ _ tl => (show n = k from ?_) ▸ tl 
+                        --rewrites the type of `tl` from `Vec α k` to `Vec α n`
+  where
+    finally
+    injection h
+``` 
+Similarly, Rocq's `Equations` (@Sozeau2019) provide an "Obligations" system which serve a similar purpose.
 
 = Making extensions modular
 #aa[TODO section intro]
@@ -226,6 +293,28 @@ inductive Term α extends Var α where
 #aa[Empty for now, no work has been done here, write down your ideas]
 
 = Case study: extending STLC
+
+In order to iterate on this implementation and ensure its usability, we studied the case of taking an existing implementation of STLC#footnote("https://github.com/amarmaduke/lean-stlc") which prove the strong normalization property of the system, and extended it with additional constructors, allowing us to modularly prove SN for the extended system. In particular, the original normalization was *not* built with modularity in mind, and was still extendable after the fact. The original formalisation is extrinsically typed, and follows the usual proof of normalisation using a logical relation.
+#align(center)[#grid(columns: 2, column-gutter: 2em)[```lean
+inductive Ty : Type where
+| base : Ty
+| arrow : Ty -> Ty -> Ty
+```][```lean
+inductive Term where
+| var : Nat -> Term
+| app : Term -> Term -> Term
+| lam : Ty -> Term -> Term
+```]]
+We extend this base definition to add natural numbers:
+#align(center)[#grid(columns: 2, column-gutter: 2em)[```lean
+inductive Ty extends Ty where
+  | nat
+```][```lean
+inductive Term extends Term where
+  | zero : Term
+  | succ : Term → Term
+  | natRec : Term → Term → Term → Term
+```]]
 
 == Related works
 
