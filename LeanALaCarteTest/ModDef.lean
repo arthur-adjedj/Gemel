@@ -13,7 +13,7 @@ namespace ModDefTests
 def base (n : Nat) : Nat := Nat.succ n
 
 modular
-  mod_def base' extends base
+  mod def base' extends base
 
 example (n : Nat) : base' n = Nat.succ n := rfl
 
@@ -21,12 +21,12 @@ theorem t : True := trivial
 
 modular
 
-  mod_def bad extends t
+  mod def bad extends t
 
 def baseWrap (n : Nat) : Nat := base n
 
 modular
-  mod_def baseWrap' extends baseWrap
+  mod def baseWrap' extends baseWrap
 
 example (n : Nat) : baseWrap' n = Nat.succ n := rfl
 
@@ -64,11 +64,11 @@ modular
       | .succ x  => Natt.add n x |>.succ
       | .succ' x => Natt.add n x |>.succ'
 
-  mod_def Natt.add'' extends Nat.add' where
+  mod def Natt.add'' extends Nat.add' where
     matcher match_1 with
       | Natt.succ' n => fun k => (Natt.add'' n k).succ'
 
-  mod_def Natt.add' extends Nat.add where
+  mod def Natt.add' extends Nat.add where
     matcher match_1 n k with
       | _, Natt.succ' k => (Natt.add' n k).succ'
   termination_by structural _ x => x
@@ -77,7 +77,7 @@ modular
   inductive Vecc (α : Type) extends Vec α where
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
-  mod_def Vecc.append extends Vec.append where
+  mod def Vecc.append extends Vec.append where
     matcher match_1 with
       | Nat.succ _,Vecc.cons' hd tl => Vecc.cons' hd (Vecc.append tl v₂)
 

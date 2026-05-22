@@ -116,7 +116,7 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   { ref := stx, name, argNames, alts }
 
 syntax (name := modular_mod_def)
-  declModifiers "mod_def" (ident)? "extends" ident ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+  declModifiers "mod" ws "def" (ident)? "extends" ident ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=
@@ -197,14 +197,14 @@ def elabModMatchNoClauses (newFunName : Name) (matchExt : MatchToExtend) : Modul
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $mod:declModifiers mod_def $[$newFunStx?]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
-    let modifiers ← elabModifiers mod
+  | `(modular_command| $decls:declModifiers mod def $[$newFunStx?]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
+    let modifiers ← elabModifiers decls
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
     let oldFunCinfo ← getConstInfo oldFunName
     unless oldFunCinfo.hasValue (allowOpaque := true) do
-      throwError "`mod_def` can only extend declarations defined with `def` or `theorem`"
+      throwError "`mod def` can only extend declarations defined with `def` or `theorem`"
     let expandedDeclId ← withRef? newFunStx? do
       let newFunStx :=
         if let some newFunStx := newFunStx? then
@@ -282,7 +282,7 @@ meta def elabModDef : ModularElab := fun stx =>
         let declsConsts := mapHeaders.map fun {cinfo, newName, ..} => mkConst newName (cinfo.levelParams.map Level.param)
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
-          throwError "`mod_def` generated unresolved metavariables"
+          throwError "`mod def` generated unresolved metavariables"
         addDeclarationRangesFromSyntax newFunName stx
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes

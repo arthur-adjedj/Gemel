@@ -86,35 +86,35 @@ modular
     | const : Nat → NatExt Γ .nat
     | plus : NatExt Γ .nat → NatExt Γ .nat → NatExt Γ .nat
 
-  mod_def NatExt.wk extends Var.wk where
+  mod def NatExt.wk extends Var.wk where
     matcher match_1 R with
       | .const a => .const a
       | .plus a b => .plus (NatExt.wk R a) (NatExt.wk R b)
 
-  mod_def NatExt.wk_comp extends Var.wk_comp where
+  mod def NatExt.wk_comp extends Var.wk_comp where
     finally
       · intros
         simp only [NatExt.wk]
       · intro _ _ _ a_ih b_ih _ _ _ _
         simp [NatExt.wk,a_ih,b_ih]
 
-  mod_def NatExt.Subst extends Var.Subst
+  mod def NatExt.Subst extends Var.Subst
 
-  mod_def NatExt.subst extends Var.subst where
+  mod def NatExt.subst extends Var.subst where
     matcher match_1 s with
       | .const a => .const a
       | .plus a b => .plus (NatExt.subst s a) (NatExt.subst s b)
 
-  mod_def NatExt.Subst.id extends Var.Subst.id
-  mod_def NatExt.Subst.comp extends Var.Subst.comp
+  mod def NatExt.Subst.id extends Var.Subst.id
+  mod def NatExt.Subst.comp extends Var.Subst.comp
 
-  mod_def NatExt.subst_id extends Var.subst_id where
+  mod def NatExt.subst_id extends Var.subst_id where
     finally
       · intros; rfl
       · intro Γ a b a_ih b_ih
         rw [NatExt.subst,a_ih,b_ih]
 
-  mod_def NatExt.wk_subst extends Var.wk_subst where
+  mod def NatExt.wk_subst extends Var.wk_subst where
     finally
       · intros
         rfl
@@ -134,12 +134,12 @@ modular
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
-  mod_def Term.wk extends NatExt.wk where
+  mod def Term.wk extends NatExt.wk where
     matcher match_1 with
       | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
       | _, .app a b => .app (Term.wk R a) (Term.wk R b)
 
-  mod_def Term.wk_comp extends NatExt.wk_comp where
+  mod def Term.wk_comp extends NatExt.wk_comp where
     finally
     · intro _ _ _ _ a_ih _ _ _ _
       simp only [Term.wk,a_ih,Ren.ext_comp_ext]
@@ -147,8 +147,8 @@ modular
       clear Term.wk_comp
       simp only [Term.wk, *]
 
-  mod_def Term.Subst extends NatExt.Subst
-  mod_def Term.Subst.id extends NatExt.Subst.id
+  mod def Term.Subst extends NatExt.Subst
+  mod def Term.Subst.id extends NatExt.Subst.id
 
   theorem Term.wk_id {Γ : List LamTy} {h : Γ.Has A} : Term.wk (Ren.wk B) (Subst.id A h) = (Subst.id A h.tail) := rfl
 
@@ -167,16 +167,16 @@ modular
     | _,.head => a
     | _,.tail h => .var h
 
-  mod_def Term.subst extends NatExt.subst where
+  mod def Term.subst extends NatExt.subst where
     matcher match_1 with
       | _, .lam f => .lam (Term.subst (Term.subst_ext s _) f)
       | _, .app a b => .app (Term.subst s a) (Term.subst s b)
 
-  mod_def Term.Subst.comp extends NatExt.Subst.comp
+  mod def Term.Subst.comp extends NatExt.Subst.comp
 
   infixr:90 " ∘ₛₜ " => Term.Subst.comp
 
-  mod_def Term.subst_id extends NatExt.subst_id where
+  mod def Term.subst_id extends NatExt.subst_id where
     finally
       · intro _ _ _ a a_ih
         rw [Term.subst, Term.subst_ext_id,a_ih]
@@ -192,7 +192,7 @@ modular
   local infixr:75 " ⤳ " => Term.Step
   local infixr:75 " ⤳⋆ " => RTC Term.Step
 
-  mod_def Term.wk_subst extends NatExt.wk_subst where
+  mod def Term.wk_subst extends NatExt.wk_subst where
     finally
     · intro A Γ B f f_ih R s _ _
       simp [Term.subst,Term.wk,f_ih]
