@@ -1,4 +1,5 @@
 #import "@preview/curryst:0.5.1": rule, prooftree
+#import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
 #let rule-set(column-gutter: 3em, row-gutter: 5em, ..rules) = {
   set par(leading: row-gutter)
   block(rules.pos().map(box).join(h(column-gutter, weak: true)))
@@ -57,17 +58,7 @@ Like other programming languages, ITPs fall victim to the the fact that reusing 
 #quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, without recompiling existing code.”] In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. Most projects that try to extend existing formalisation resort to copying the original content and adapting it for its own purpose. 
 Since proofs about programs are arguably even harder to maintain than programs, this copy-paste approach incurs a huge maintenance burden.
 
-A central contribution on matters of modularity in regular programming languages, "Data Types à la Carte" (@Swierstra2008), provides a simple and elegant solution to the expression problem based on a parametrical approach to modular syntax in Haskell. This solution, however, cannot be easily adapted to ITPs since ITPs needs to ensure consistency via their type system. Instead, existing approaches either rely on complex encodings of datatypes that leak to the user, or on meta-programming.
-
-"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inneficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementionned encodings from the ground up), and expose the underlying internals of the encodings to the user.
-Having to deal with encodings of types rather than types adds
-a heavy burden in particular for new users interested in program verification.
-The lesson to include inductive datatypes natively has been learned early by popular ITPs (namely Rocq and Lean), who at first had no primitive notions of inductive types in their systems and then resorted to add those. Nowadays, most systems usually posess a syntactic notion of (co-)inductive types, and justify the ability to define these via some classes of models, allowing users to work with the abstractions these types provide, rather than with their encoding in said models. The only popular system that still relies on encodings to define such types, and manages to hide their implementation details well, is Isabelle/HOL.
-
-// #yf[Explain that now people do not work with datatypes anymore but with complicated encodings that are normally used to justify types in models -> there's a reason one wants to work in a nice system and not in a model for a nice system]
-On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the informations given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
-
-None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
+We present a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous datatypes and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalisation that was not intended for such uses. To demonstrate this, we present a case-study which takes an existing, independent formalisation of the Simply-Typed Lambda Calculus (STLC), and extend it with new constructions, modularly proving the strong normalisation of the new calculus modularly.
 
 = Extensions
 
@@ -277,6 +268,7 @@ In practice having matches be handled specially makes a clear distinction betwee
     <matchers>
   finally
     <tactics>
+  <termination-information>?
 ```
 This sort of distinction appears is not new. Indeed `where finally` was already a feature in Lean, and could be used to fill-in proof holes after the fact:
 ```lean
@@ -292,9 +284,37 @@ def Vec.tl (v : Vec α (n+1)) : Vec α n :=
 Similarly, Rocq's `Equations` (@Sozeau2019) provide an "Obligations" system which serve a similar purpose.
 
 = Making extensions modular
-#aa[TODO section intro]
+The current set-up allows one to extend previous definitions iteratively, though one may argue these extensions are not strictly "modular". In particular, one cannot simply "apply" an extension to adeclaration, and instead needs to ground his extensions on base declarations. This, in particular, means one isn't able to compose different extensions. Take the Barendregt lambda-cube (@Barendregt1991) for exemple:
+
+// https://q.uiver.app/#r=typst&q=WzAsOCxbMCw0LCJcXGxhbWJkYSJdLFswLDEsIlxcbGFtYmRhMiJdLFszLDQsIlxcbGFtYmRhIFAiXSxbMSwzLCJcXGxhbWJkYVxcb21lZ2EiXSxbMSwwLCJcXGxhbWJkYVxcb21lZ2EiXSxbNCwwLCJcXGxhbWJkYSBDIl0sWzQsMywiXFxsYW1iZGEgUFxcb21lZ2EiXSxbMywxLCJcXGxhbWJkYSBQMiJdLFswLDFdLFswLDJdLFswLDNdLFszLDRdLFsxLDRdLFs0LDVdLFsyLDZdLFszLDZdLFs2LDVdLFsyLDddLFsxLDddLFs3LDVdXQ==
+#align(center, diagram(spacing: 1em,{
+	node((-2, 1), [$lambda$])
+	node((-2, -2), [$lambda 2$])
+	node((1, 1), [$lambda P$])
+	node((-1, 0), [$lambda underline(omega)$])
+	node((-1, -3), [$lambda omega$])
+	node((2, -3), [$lambda C$])
+	node((2, 0), [$lambda P underline(omega)$])
+	node((1, -2), [$lambda P 2$])
+	edge((-2, 1), (-2, -2), "->")
+	edge((-2, 1), (1, 1), "->")
+	edge((-2, 1), (-1, 0), "->")
+	edge((-1, 0), (-1, -3), "->")
+	edge((-2, -2), (-1, -3), "->")
+	edge((-1, -3), (2, -3), "->")
+	edge((1, 1), (2, 0), "->")
+	edge((-1, 0), (2, 0), "->")
+	edge((2, 0), (2, -3), "->")
+	edge((1, 1), (1, -2), "->")
+	edge((-2, -2), (1, -2), "->")
+	edge((1, -2), (2, -3), "->")
+}))
+
+The various vertices of the cube can be seen as various extensions of the initial vertex corresponding to STLC. However, an important feature of this cube is that all vertices can be written as compositions of the 3 adjactent vertices of $lambda$, namely $lambda P$, $lambda 2$ and $lambda underline(omega)$. If one wanted to formalise each vertex of the cube in the past, they would need to write down 8 different formalisations. With our current framework, they need only write down 1 formalisation and 7 extensions of that base formalisation. If our system was modular however, one would only need to write down the base formalisation and the 3 adjacent extensions, only needing to compose them to get the rest of them afterwards. We focus back on our extension systems for inductive types and definitions and describe a way to make them composable, thus achieving true modularity.
 
 == Inductive modularity
+
+
 
 == Definition modularity
 #aa[Empty for now, no work has been done here, write down your ideas]
@@ -302,7 +322,8 @@ Similarly, Rocq's `Equations` (@Sozeau2019) provide an "Obligations" system whic
 = Case study: extending STLC
 
 In order to iterate on this implementation and ensure its usability, we studied the case of taking an existing implementation of STLC#footnote("https://github.com/amarmaduke/lean-stlc") which prove the strong normalization property of the system, and extended it with additional constructors, allowing us to modularly prove SN for the extended system. In particular, the original normalization was *not* built with modularity in mind, and was still extendable after the fact. The original formalisation is extrinsically typed, and follows the usual proof of normalisation using a logical relation.
-#align(center)[#grid(columns: 2, column-gutter: 2em)[```lean
+
+#align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
 inductive Ty : Type where
 | base : Ty
 | arrow : Ty -> Ty -> Ty
@@ -311,9 +332,11 @@ inductive Term where
 | var : Nat -> Term
 | app : Term -> Term -> Term
 | lam : Ty -> Term -> Term
-```]]
+```]]]
+
 We extend this base definition to add natural numbers:
-#align(center)[#grid(columns: 2, column-gutter: 2em)[```lean
+
+#align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
 inductive Ty extends Ty where
   | nat
 ```][```lean
@@ -321,9 +344,24 @@ inductive Term extends Term where
   | zero : Term
   | succ : Term → Term
   | natRec : Term → Term → Term → Term
-```]]
+```]]]
+
+The total formalisation contains 12 inductive types as well as 92 definitions/theorems. Almost all of these were extended correctly. The sole limiting factor in reaching the end of the formalisation relying only on extensions was with regards of the logical relation `LR` used in the original formalisation: their initial formulation was too weak to prove SN on a system extended with natural numbers, and the theorems surrounding it relied heavily on definitional equalities of `LR` that could not be recovered after the partially mapping it to something strong enough for our use-case. As such, the fundamental lemma itself had to be written in a non-extended fashion. 
 
 == Related works
+
+
+A central contribution on matters of modularity in regular programming languages, "Data Types à la Carte" (@Swierstra2008), provides a simple and elegant solution to the expression problem based on a parametrical approach to modular syntax in Haskell. This solution, however, cannot be easily adapted to ITPs since ITPs needs to ensure consistency via their type system. Instead, existing approaches either rely on complex encodings of datatypes that leak to the user, or on meta-programming.
+
+"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inneficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementionned encodings from the ground up), and expose the underlying internals of the encodings to the user.
+Having to deal with encodings of types rather than types adds
+a heavy burden in particular for new users interested in program verification.
+The lesson to include inductive datatypes natively has been learned early by popular ITPs (namely Rocq and Lean), who at first had no primitive notions of inductive types in their systems and then resorted to add those. Nowadays, most systems usually posess a syntactic notion of (co-)inductive types, and justify the ability to define these via some classes of models, allowing users to work with the abstractions these types provide, rather than with their encoding in said models. The only popular system that still relies on encodings to define such types, and manages to hide their implementation details well, is Isabelle/HOL.
+
+// #yf[Explain that now people do not work with datatypes anymore but with complicated encodings that are normally used to justify types in models -> there's a reason one wants to work in a nice system and not in a model for a nice system]
+On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the informations given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
+
+None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 
 // @Forster2020 already explores the angle consisting of extending inductive types vertically (#ie by adding new constructors or merging inductive types of similar shape), before exposing "obligations", #ie holes in the original definitions/proofs that need to be filled in by the user in order to complete the formalisation. Similarly, Pyrosome (@Pyrosome) additionally provides some forms of horizontal extensions (#ie adding new parameters and indices to inductive types), although limits itself to working for programming languages formalisation, and constrains such languages to be encoded as GATs instead of usual inductive types. \
 // #yf[ maybe do all of related work briefly here?]  \
