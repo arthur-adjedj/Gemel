@@ -12,27 +12,6 @@ public meta section
 
 open Lean Parser Elab Meta Command
 
-namespace IndExtension
-
-/-- Encodes the extension of some inductive by some other inductive types. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors. -/
-structure AddInd where
-  /-We ideally want extensions to extend arbitrary inductives family instantiations , not just the base case, e.g consider cases like:`inductive Foo (A) extends Prod A A where ...`.
-  (Instantiating type parameters of the extended types here makes sense to me, instantiating indices not so much.)
-  In practice, the toy system currently implemented simply maps from constant names to Exprs, so it wouldn't work for such cases. Instead, the real implementation will have to rely on something to unify patterns, e.g using `DiscrTree`s-/
-  indName : Name
-
-/-- Encodes the extension of some inductive types by adding new constructors. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors.  -/
-structure AddCtors where
-  lparams : List Name
-  indType : Expr
-  addedCtors : Array Constructor
-
-inductive _root_.IndExtension where
-  | addCtors : AddCtors → IndExtension
-  | addInd : AddInd → IndExtension
-
-end IndExtension
-
 /- TODO extend structure to manage mutual types -/
 structure ExtendedInd where
   newIndName : Name

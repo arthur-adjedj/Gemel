@@ -8,6 +8,27 @@ public section
 
 open Lean Meta Elab Command Term
 
+namespace IndExtension
+
+/-- Encodes the extension of some inductive by some other inductive types. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors. -/
+structure AddInd where
+  /-We ideally want extensions to extend arbitrary inductives family instantiations , not just the base case, e.g consider cases like:`inductive Foo (A) extends Prod A A where ...`.
+  (Instantiating type parameters of the extended types here makes sense to me, instantiating indices not so much.)
+  In practice, the toy system currently implemented simply maps from constant names to Exprs, so it wouldn't work for such cases. Instead, the real implementation will have to rely on something to unify patterns, e.g using `DiscrTree`s-/
+  indName : Name
+
+/-- Encodes the extension of some inductive types by adding new constructors. We constrain such extensions such that they are only allowed on types with the same number of universes, and same parameters/indices. Adding/Removing parameters/indices should be done as part of a separate inductive extension ran before the addition of new constructors.  -/
+structure AddCtors where
+  lparams : List Name
+  indType : Expr
+  addedCtors : Array Constructor
+
+inductive _root_.IndExtension where
+  | addCtors : AddCtors → IndExtension
+  | addInd : AddInd → IndExtension
+
+end IndExtension
+
 declare_syntax_cat modular_command
 
 def ModularCommand := TSyntax `modular_command
@@ -39,6 +60,7 @@ structure MatchToExtend where
 
 structure ModularElabState where
   map : ModularMap := {}
+  indFunctors : NameMap IndExtension := {}
 
 structure ModularState extends ModularElabState where
   matchesToExtend : Array MatchToExtend := #[]
@@ -46,7 +68,9 @@ structure ModularState extends ModularElabState where
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
   modifyMap : (ModularMap → ModularMap) → m Unit
-export MonadModular (getMap modifyMap)
+  getIndFunctors : m (NameMap IndExtension)
+  modifyIndFunctors : (NameMap IndExtension → NameMap IndExtension) → m Unit
+export MonadModular (getMap modifyMap getIndFunctors modifyIndFunctors)
 
 class MonadModMappedLCtx (m) [Monad m] where
   getModMappedLCtx : m LocalContext
@@ -62,17 +86,17 @@ def addMapEntries [Monad m] [MonadModular m] (mappings : List (Name × ModularEx
 def setMap [Monad m] [MonadModular m] (map: ModularMap) : m Unit := modifyMap fun _ => map
 
 def withModifyMap [Monad m] [MonadModular m] (f : ModularMap → ModularMap) (k : m α) : m α := do
-  let oldMap ← getMap
+  let oldSt ← getMap
   modifyMap f
   let res ← k
-  setMap oldMap
+  setMap oldSt
   return res
 
 def withSetMap [Monad m] [MonadModular m] (map : ModularMap) (k : m α) : m α := do
-  let oldMap ← getMap
+  let oldSt ← getMap
   setMap map
   let res ← k
-  setMap oldMap
+  setMap oldSt
   return res
 
 def withModMappedLCtx [Monad m] [MonadModMappedLCtx m] [MonadControlT MetaM m] (k : m α) : m α := do
@@ -83,14 +107,20 @@ def withModMappedLCtx [Monad m] [MonadModMappedLCtx m] [MonadControlT MetaM m] (
 instance [Monad m] : MonadModular (StateT ModularState m) where
   getMap := get >>= pure ∘ (·.map)
   modifyMap f := modify fun m =>  {m with map := f m.map}
+  getIndFunctors := get >>= pure ∘ (·.indFunctors)
+  modifyIndFunctors f := modify fun m =>  {m with indFunctors := f m.indFunctors}
 
 instance [Monad m] : MonadModular (StateT ModularElabState m) where
   getMap := get >>= pure ∘ (·.map)
   modifyMap f := modify fun m =>  {m with map := f m.map}
+  getIndFunctors := get >>= pure ∘ (·.indFunctors)
+  modifyIndFunctors f := modify fun m =>  {m with indFunctors := f m.indFunctors}
 
 instance [Monad m] [MonadModular m] : MonadModular (ReaderT ρ m) where
   getMap _ := getMap
   modifyMap f _ := modifyMap f
+  getIndFunctors _ := getIndFunctors
+  modifyIndFunctors f _ := modifyIndFunctors f
 
 instance [Monad m] : MonadModMappedLCtx (ReaderT LocalContext m) where
   getModMappedLCtx := read
@@ -256,7 +286,7 @@ declare_command_config_elab elabModularSetup ModularSetup
 
 syntax (name := modular_block) "modular" Parser.Tactic.optConfig manyIndent(modular_command) : command
 
-initialize modularMaps : IO.Ref (Std.HashMap Name ModularElabState) ← IO.mkRef {}
+initialize modStates : IO.Ref (Std.HashMap Name ModularElabState) ← IO.mkRef {}
 
 @[command_elab modular_block, incremental]
 def elabModularBlock : CommandElab := fun stx => do
@@ -270,11 +300,11 @@ def elabModularBlock : CommandElab := fun stx => do
       if snap.old?.isSome && oldSnap?.isNone then
         snap.old?.forM (·.val.cancelRec)
       let opts ← getOptions
-      let mut map : ModularElabState := {}
+      let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modmap := (← modularMaps.get)[name]?
+        let some modst := (← modStates.get)[name]?
           | throwError "Failed to import modular mapping {name}."
-        map := ⟨map.map ∪ modmap.map⟩
+        st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let mut outputs : Array (Command.State × ModularElabState) := #[]
       let oldCmds? := oldSnap?.map (·.cmds)
       let oldOutputs? := oldSnap?.map (·.outputs)
@@ -285,20 +315,20 @@ def elabModularBlock : CommandElab := fun stx => do
         let oldOutput? := oldOutputs?.bind (·[i]?)
         if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
           match oldOutput? with
-          | some (oldState, oldMap) =>
+          | some (oldState, oldSt) =>
             set oldState
-            map := oldMap
-            outputs := outputs.push (oldState, oldMap)
+            st := oldSt
+            outputs := outputs.push (oldState, oldSt)
           | none =>
             reusedPrefix := false
-            let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
-            map := newMap
-            outputs := outputs.push ((← get), map)
+            let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run st
+            st := newMap
+            outputs := outputs.push ((← get), st)
         else
           reusedPrefix := false
-          let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run map
-          map := newMap
-          outputs := outputs.push ((← get), map)
+          let (_, newst) ← elabModularCommand cmd |>.run {} |>.run st
+          st := newst
+          outputs := outputs.push ((← get), st)
       snap.new.resolve <| .ofTyped {
         diagnostics := .empty
         cmds := m.map (·.raw)
@@ -306,16 +336,16 @@ def elabModularBlock : CommandElab := fun stx => do
         : ModularBlockSnapshot
       }
       if !cfg.name.isAnonymous then
-        modularMaps.modify (Std.HashMap.insert · cfg.name map)
+        modStates.modify (Std.HashMap.insert · cfg.name st)
     else
-      let mut map : ModularElabState := {}
+      let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modmap := (← modularMaps.get)[name]?
+        let some modst := (← modStates.get)[name]?
           | throwError "Failed to import modular mapping {name}."
-        map := ⟨map.map ∪ modmap.map⟩
-      let (_,endMap) ← elabModularCommands m |>.run {} |>.run map
+        st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
+      let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
       if !cfg.name.isAnonymous then
-        modularMaps.modify (Std.HashMap.insert · cfg.name endMap)
+        modStates.modify (Std.HashMap.insert · cfg.name endMap)
   | _ => throwUnsupportedSyntax
 
 initialize
