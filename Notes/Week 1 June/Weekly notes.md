@@ -1,0 +1,1 @@
+Spent the week stressing over getting my CDSN funding, and working on my slides for the LHC workshop in 2 weeks. Turns out I did end up getting CDSN funding on late friday, and the slides are seemingly going well. Not much else to add.
