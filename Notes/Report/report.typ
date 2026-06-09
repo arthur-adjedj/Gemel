@@ -12,6 +12,7 @@
 #show: thm-rules
 
 // #set text(size:9pt)
+#set page(numbering: "1")
 #set par(first-line-indent: 1.5em, justify: true)
 #set cite(form: "prose", style: "citation-style.csl",)
 #set quote(block: true)
@@ -21,8 +22,12 @@
 #let yf(body) = text(fill:purple, "YF: " + body)
 #let nt(body) = text(fill:red.lighten(20%), "NT: " + body)
 #set raw(syntaxes: "Lean.sublime-syntax")
+
+
+
 #let ie= emph[i.e.,]
 #let eg= emph[e.g.,]
+
 
 #align(center)[
   #title[Internship report: Modularity in Interactive Theorem Provers]
@@ -148,14 +153,16 @@ We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the
 #aa[TODO fix spacing]
 
 #rule-set(modmap_univ,modmap_var,modmap_const,modmap_mvar,modmap_app,modmap_pi,modmap_lam)
-
-
 ]
 
 #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
 
 The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
-#theorem[If for all $((d : A) mapsto (Theta,t : A')) in Phi$, we have (1) $Sigma | epsilon | epsilon tack.r d : A$, (2) $Sigma | Theta | epsilon tack.r t : A'$ and (3) $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, then for all $Gamma, t, A$ s.t $Sigma | Gamma tack.r t : A$, there exists $Delta,t',A'$ s.t $Sigma | Phi | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
+#theorem[Given a mapping context $Phi$, if for each $((d : A) mapsto (Theta,t : A')) in Phi$, we have :
++ $Sigma | epsilon | epsilon tack.r d : A$
++ $Sigma | Theta | epsilon tack.r t : A'$ 
++ $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, 
+Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
 Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
 #aa[TODO: actually prove this #emoji.face.woozy]
 == Inductive extensions
@@ -279,7 +286,8 @@ def Vec.tl (v : Vec α (n+1)) : Vec α n :=
 Similarly, Rocq's `Equations` (@Sozeau2019) provide an "Obligations" system which serve a similar purpose.
 We thus adopt a similar syntax to normal Lean `def`, by asking for matchers to be completed first, before asking proof holes to be solved in a `where finally` block. Termination information such as `termination_by` or `decreasing_by` can be additionally provided if needed to help with producing a well-founded recursive function:
 
-#box(clip:true)[```mod def foo extends bar where
+#box(clip:true)[
+```mod def foo extends bar where
     <matchers>
   finally
     <tactics>
@@ -450,5 +458,5 @@ None of these systems, independently of whether they use encodings or the meta-p
 // He has coordinated large formalisations of type theory in Rocq that would have benefited greatly from modular methods.
 // 
 // Yannick Forster has worked on meta-programming in Rocq for years (@Sozeau2020a, @Liesnikov2020) and both informally and formally supervised projects, including a past effort in providing modularity to Rocq (@Forster2020). He has initiated the meta-programming rosetta stone project for Rocq. He is a member of the MetaRocq team and maintains strong connections to the development teams of Rocq (Matthieu Sozeau, Nicolas Tabareau, Hugo Herbelin), Rocq-Elpi (Enrico Tassi), Ltac2 (Pierre-Marie Pédrot, Gaëtan Gilbert), Agda (Jesper Cockx), and Lean (Sebastian Ullrich, Mario Carneiro)
-
+#pagebreak()
 #bibliography("biblio.bib", title : "References", style : "citation-style.csl")
