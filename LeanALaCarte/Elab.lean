@@ -26,6 +26,7 @@ structure AddCtors where
 inductive _root_.IndExtension where
   | addCtors : AddCtors → IndExtension
   | addInd : AddInd → IndExtension
+  -- should composition be primitive to IndExtensions ?
 
 end IndExtension
 

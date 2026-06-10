@@ -333,6 +333,32 @@ def ExtendedInd.addInductiveMappings (oldIndName? : Option Name) (extendedInduct
   let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
   mkAuxMappings mkAuxNames oldIndName newIndName
 
+meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
+  mkRecOn indName
+  mkCasesOn indName
+  mkCtorIdx indName
+  mkCtorElim indName
+  mkNoConfusion indName
+  mkBelow indName
+  mkBRecOn indName
+  mkSizeOfInstances indName
+  IndPredBelow.mkBelow indName
+  mkInjectiveTheorems indName
+
+
+meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) : ModularM (List Constructor) := do
+  let newIndName := extendedInd.newIndName
+  trace[Modular.Elab] m!"Elaborating extended inductive {extendedInd.newIndName}"
+  let extendedInductive ← extendedInd.toInductiveType oldIndName? oldCtors
+  -- In order to avoid name conflicts between ctors of auxiliary inductives, we first elaborate ctor names without a scope, then prepend said ctors with the right names
+  let extendedInductive := {extendedInductive with ctors := extendedInductive.ctors.map fun ctor => {ctor with name := extendedInductive.name ++ ctor.name}}
+  trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
+  addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
+  mkAuxConstructions newIndName
+  extendedInd.addInductiveMappings oldIndName?
+  trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
+  return extendedInductive.ctors
+
 -- TODO add `addTermInfo'` for inductive/ctor names
 @[modular_elab modular_inductive, incremental]
 meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
@@ -340,24 +366,56 @@ meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let mut oldIndName? := none
   let mut oldCtors := []
   for extendedInd in extendedInds do
-    let newIndName := extendedInd.newIndName
-    trace[Modular.Elab] m!"Elaborating extended inductive {extendedInd.newIndName}"
-    let extendedInductive ← extendedInd.toInductiveType oldIndName? oldCtors
-    oldCtors := extendedInductive.ctors
-    -- In order to avoid name conflicts between ctors of auxiliary inductives, we first elaborate ctor names without a scope, then prepend said ctors with the right names
-    let extendedInductive := {extendedInductive with ctors := extendedInductive.ctors.map fun ctor => {ctor with name := extendedInductive.name ++ ctor.name}}
-    trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
-    addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
-    mkRecOn newIndName
-    mkCasesOn newIndName
-    mkCtorIdx newIndName
-    mkCtorElim newIndName
-    mkNoConfusion newIndName
-    mkBelow newIndName
-    mkBRecOn newIndName
-    mkSizeOfInstances newIndName
-    IndPredBelow.mkBelow newIndName
-    mkInjectiveTheorems newIndName
-    extendedInd.addInductiveMappings oldIndName?
-    oldIndName? := some newIndName
-    trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
+    oldCtors ← elabExtension oldIndName? oldCtors extendedInd
+
+syntax bracketedExplicitBinder := "(" withoutPosition(binderIdent ppSpace ": " term) ")"
+
+syntax (name := modular_addInd_ext) "inductive" "extension" ident " extends " ident: modular_command
+
+@[modular_elab modular_addInd_ext, incremental]
+meta def elabAddIndExt : ModularElab
+  | `(modular_command|inductive extension $F extends $ind) => liftModularM do
+    let indName ← resolveGlobalConstNoOverload ind
+    let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
+    if (← getIndFunctors).contains declName then
+      throwError "Functor {declName} already declared"
+    modifyIndFunctors (NameMap.insert · declName (.addInd { indName := indName }))
+  | _ => throwUnsupportedSyntax
+
+syntax "inductive " "extension " ident binderIdent ("where" ctor*): modular_command
+
+syntax (name := modular_indctive_def) "inductive" ident ":=" ident ("$" ident)+ : modular_command
+@[modular_elab modular_indctive_def, incremental]
+meta def elabModInd : ModularElab
+  | `(modular_command|inductive $ind := $F1 $[$ $i]*) => liftModularM do
+    let (newIndName, _) ← mkDeclName (← getCurrNamespace) {} ind.getId
+    let some oldIndStx := i.back?
+      | throwError "Ill-formed functor application. Expected app of the form `F1 $ ... $ Fn $ I` where `Fi` are feature functors, and `I` an inductive type"
+    let oldIndName ← realizeGlobalConstNoOverload oldIndStx
+    let functorsIdents := i[:i.size-1].toArray.reverse.push F1
+    let functorNames ← functorsIdents.mapM fun F => do
+      let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
+      return declName
+    let functorMap ← getIndFunctors
+    let functors ← functorNames.mapM fun F => do
+      let some indExt := functorMap.find? F
+        | throwError "Unknown feature functor {F}"
+      pure indExt
+    let newIndNames ← Term.withDeclName newIndName do
+      functorNames.mapIdxM fun idx _ =>
+        if idx = functorNames.size-1 then
+          pure newIndName
+        else
+          mkAuxDeclName
+    let mut oldCtors := [] --is this correct ?
+    for idx in [:newIndNames.size], F in functors do
+      let oldIndName := if idx = 0 then oldIndName else newIndNames[idx-1]!
+      let oldInd ← getConstInfoInduct oldIndName
+      let extendedInd := { newIndName := newIndNames[idx]!,
+                           numParams := oldInd.numParams,
+                           levelParams := oldInd.levelParams,
+                           origType := oldInd.type,
+                           type := (← modMap oldInd.type),
+                           «extension» := F }
+      oldCtors ← elabExtension oldIndName oldCtors extendedInd
+  | _ => throwUnsupportedSyntax
