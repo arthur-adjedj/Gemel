@@ -345,7 +345,6 @@ meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
   IndPredBelow.mkBelow indName
   mkInjectiveTheorems indName
 
-
 meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) : ModularM (List Constructor) := do
   let newIndName := extendedInd.newIndName
   trace[Modular.Elab] m!"Elaborating extended inductive {extendedInd.newIndName}"
@@ -384,7 +383,7 @@ meta def elabAddIndExt : ModularElab
 
 syntax "inductive " "extension " ident binderIdent ("where" ctor*): modular_command
 
-syntax (name := modular_indctive_def) "inductive" ident ":=" ident ("$" ident)+ : modular_command
+syntax (name := modular_indctive_def) "inductive" ident ":=" ident ws ("$" ws ident)+ : modular_command
 @[modular_elab modular_indctive_def, incremental]
 meta def elabModInd : ModularElab
   | `(modular_command|inductive $ind := $F1 $[$ $i]*) => liftModularM do
@@ -401,13 +400,21 @@ meta def elabModInd : ModularElab
       let some indExt := functorMap.find? F
         | throwError "Unknown feature functor {F}"
       pure indExt
-    let newIndNames ← Term.withDeclName newIndName do
-      functorNames.mapIdxM fun idx _ =>
+    let newIndNames :=
+      functorNames.mapIdx fun idx _ =>
         if idx = functorNames.size-1 then
-          pure newIndName
+          newIndName
         else
-          mkAuxDeclName
-    let mut oldCtors := [] --is this correct ?
+          newIndName.append (.mkSimple s!"_aux{idx}")
+    trace[Modular.Elab] "indNames : {newIndNames}"
+    let oldInd ← getConstInfoInduct oldIndName
+    let mut oldCtors ← oldInd.ctors.mapM fun ctorName => do
+      let ctor ← getConstInfoCtor ctorName
+      let ctorType := ctor.type
+      pure {
+        name := ctor.name.replacePrefix ctor.induct .anonymous
+        type := ctorType : Constructor
+      }
     for idx in [:newIndNames.size], F in functors do
       let oldIndName := if idx = 0 then oldIndName else newIndNames[idx-1]!
       let oldInd ← getConstInfoInduct oldIndName
