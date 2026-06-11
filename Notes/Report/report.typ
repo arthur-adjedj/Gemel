@@ -55,8 +55,6 @@ We develop a principled way to produce modular code, leveraging the strengths of
 
 = Introduction
 
-#aa[TODO some (most ?) of this should be put in related works rather than the intro.]
-#aa[Emphasis to be put on the fact formalisations can be extended after the fact, see STLC case-study.]
 Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and mechanical verification of formal proofs. ITPs can be used to provide a very high level of guarantees for software (in particular the complete absence of bugs), and several projects make use of proof assistants to verify real-world software, such as the CompCert C compiler (@Leroy-Compcert-CACM), the sel4 operating systems kernel (@sel4), and AWS' authorization policy language, Cedar (@Cedar). They have also been used successfully to formalise landmark theorems in mathematics such as the Four Colour Theorem or the Feit Thompson theorem, and the use of proof assistants is on the rise in mathematics departments, with big mathematical developments like Lean's Mathlib library (@mathlib2020) getting more and more public attention. 
 
 Like other programming languages, ITPs fall victim to the the fact that reusing definitions can be non-trivial. This is generally referred to as the *expression problem* (@Wadler98): 
