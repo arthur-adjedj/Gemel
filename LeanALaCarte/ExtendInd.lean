@@ -366,6 +366,7 @@ meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let mut oldCtors := []
   for extendedInd in extendedInds do
     oldCtors ← elabExtension oldIndName? oldCtors extendedInd
+    oldIndName? := some extendedInd.newIndName
 
 syntax bracketedExplicitBinder := "(" withoutPosition(binderIdent ppSpace ": " term) ")"
 
