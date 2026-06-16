@@ -224,7 +224,8 @@ meta def elabModDef : ModularElab := fun stx =>
     for oldAuxName in extraMapNames do
       let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
       mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
-    mapHeaders := mapHeaders.push (← mkMappedDecl oldFunName newFunName newShortName false)
+    let mainDeclHeader ← mkMappedDecl oldFunName newFunName newShortName false
+    mapHeaders := mapHeaders.push mainDeclHeader
     withMappedHeadersDecls mapHeaders fun xs => do
       let add_temp_mappings (map : ModularMap):= do
         let mut mappings := []
@@ -286,7 +287,8 @@ meta def elabModDef : ModularElab := fun stx =>
         addDeclarationRangesFromSyntax newFunName stx
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
-
+        if let some newFunInfo := newFunStx? then
+          addConstInfo newFunInfo newFunName mainDeclHeader.type
     -- All is done, we can leave the `withMappedHeadersDecls` and `withSetMap` scopes and add the correct mappings to the environment
     for {cinfo, newName, ..} in mapHeaders do
       let newMapEntry := {
