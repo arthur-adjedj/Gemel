@@ -64,7 +64,7 @@ structure ModularElabState where
   indFunctors : NameMap IndExtension := {}
 
 structure ModularState extends ModularElabState where
-  matchesToExtend : Array MatchToExtend := #[]
+  matchesToExtend : Std.HashMap MVarId MatchToExtend := {}
 
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
@@ -129,11 +129,11 @@ instance [Monad m] : MonadModMappedLCtx (ReaderT LocalContext m) where
 
 class MonadMatchExt (m) [Monad m] where
   addMatchExtension : MatchToExtend → m Unit
-  getMatchExtensions : m (Array MatchToExtend)
+  getMatchExtensions : m (Std.HashMap MVarId MatchToExtend)
 export MonadMatchExt (addMatchExtension getMatchExtensions)
 
 instance [Monad m] : MonadMatchExt (StateT ModularState m) where
-  addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.push ext}
+  addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.insert ext.mvar ext}
   getMatchExtensions := get >>= pure ∘ ModularState.matchesToExtend
 
 instance [Monad m] [MonadMatchExt m] : MonadMatchExt (ReaderT ρ m) where
@@ -158,11 +158,11 @@ abbrev ModularElabM := ReaderT LocalContext $ StateT ModularElabState CommandEla
 
 /- Warning: the function drops any potential match extension information. If you want to use this information later, use `withLiftModularM` -/
 def liftModularM (k : ModularM α) : ModularElabM α := fun lctx map => do
-  let (res,state) ← liftTermElabM (k lctx ⟨map,#[]⟩)
+  let (res,state) ← liftTermElabM (k lctx ⟨map,{}⟩)
   return (res,state.toModularElabState)
 
-def withLiftModularM (k : ModularM Unit) (k' : Array MatchToExtend → ModularElabM α) : ModularElabM α := fun lctx map => do
-  let (_,state) ← liftTermElabM (k lctx ⟨map,#[]⟩)
+def withLiftModularM (k : ModularM Unit) (k' : Std.HashMap MVarId MatchToExtend → ModularElabM α) : ModularElabM α := fun lctx map => do
+  let (_,state) ← liftTermElabM (k lctx ⟨map,{}⟩)
   k' state.matchesToExtend |>.run lctx state.toModularElabState
 
 public meta section

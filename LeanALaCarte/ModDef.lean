@@ -249,7 +249,7 @@ meta def elabModDef : ModularElab := fun stx =>
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
         -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
-        let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
+        let matchExtensions ← matchExtensions.valuesArray.filterM fun {mvar,..} => notM mvar.isAssigned
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
         for matchExt in matchExtensions do
             try
