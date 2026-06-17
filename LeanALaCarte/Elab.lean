@@ -140,7 +140,20 @@ instance [Monad m] [MonadMatchExt m] : MonadMatchExt (ReaderT ρ m) where
   addMatchExtension ext _ := addMatchExtension ext
   getMatchExtensions _ := getMatchExtensions
 
+/-- Modularity monad. Builds on top of `TermElabM`. Contains:
+  - A local context for your modmapped term (`getModMappedLCtx`, `withSetModMappedLCtx`)
+  - A state containing
+    + a modular map (`getMap`, `modifyMap`)
+    + a collection of inductive feature functors (`getIndFunctors`, `modifyIndFunctors`)
+    + an array of matches to extend (`addMatchExtension`, `getMatchExtensions`)
+-/
 abbrev ModularM := ReaderT LocalContext $ StateT ModularState TermElabM
+/-- Modularity monad. Builds on top of `CommandElabM`. Contains:
+  - A local context for your modmapped term (`getModMappedLCtx`, `withSetModMappedLCtx`)
+  - A state containing
+    + a modular map (`getMap`, `modifyMap`)
+    + a collection of inductive feature functors (`getIndFunctors`, `modifyIndFunctors`)
+-/
 abbrev ModularElabM := ReaderT LocalContext $ StateT ModularElabState CommandElabM
 
 /- Warning: the function drops any potential match extension information. If you want to use this information later, use `withLiftModularM` -/
