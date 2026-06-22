@@ -148,7 +148,7 @@ def elabModularSetOption : ModularElab := fun stx => do
   match stx with
   | `(modular_command| set_option $id $val in $cmd) => do
     let opts ← elabSetOption id val
-    withScopedOptions opts do
+    withScopedOptions opts.1 do
       elabModularCommand cmd
   | _ => throwUnsupportedSyntax
 

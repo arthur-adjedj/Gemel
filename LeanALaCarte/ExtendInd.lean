@@ -352,7 +352,8 @@ meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor)
   -- In order to avoid name conflicts between ctors of auxiliary inductives, we first elaborate ctor names without a scope, then prepend said ctors with the right names
   let extendedInductive := {extendedInductive with ctors := extendedInductive.ctors.map fun ctor => {ctor with name := extendedInductive.name ++ ctor.name}}
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
-  addDecl (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
+  addAndCompile (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
+  compileDecls #[extendedInd.newIndName]
   mkAuxConstructions newIndName
   extendedInd.addInductiveMappings oldIndName?
   trace[Modular.Elab] m!"modMap : {(← getMap).toList}"

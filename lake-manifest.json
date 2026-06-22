@@ -1,15 +1,16 @@
-{"version": "1.1.0",
+{"version": "1.2.0",
  "packagesDir": ".lake/packages",
  "packages":
  [{"url": "https://github.com/leanprover-community/quote4",
    "type": "git",
    "subDir": null,
    "scope": "leanprover-community",
-   "rev": "707efb56d0696634e9e965523a1bbe9ac6ce141d",
+   "rev": "7a62bd13860cd39ac98da16ffc8c24d601353f69",
    "name": "Qq",
    "manifestFile": "lake-manifest.json",
    "inputRev": "master",
    "inherited": false,
    "configFile": "lakefile.toml"}],
  "name": "LeanALaCarte",
- "lakeDir": ".lake"}
+ "lakeDir": ".lake",
+ "fixedToolchain": false}
