@@ -32,7 +32,7 @@ end IndExtension
 
 declare_syntax_cat modular_command
 
-def ModularCommand := TSyntax `modular_command
+abbrev ModularCommand := TSyntax `modular_command
 
 -- TODO manage extensions that different universes than the original type.
 -- This is important eg for cases where users extend a function with additional arguments that require new universes
@@ -58,13 +58,14 @@ structure MatchToExtend where
   originalMatch : Expr
   originalLCtx : LocalContext
   modMappedRhss : Array Expr
+deriving Inhabited
 
 structure ModularElabState where
   map : ModularMap := {}
   indFunctors : NameMap IndExtension := {}
 
 structure ModularState extends ModularElabState where
-  matchesToExtend : Std.HashMap MVarId MatchToExtend := {}
+  matchesToExtend : Std.HashMap MVarId (Array MatchToExtend) := {}
 
 class MonadModular (m) [Monad m] where
   getMap : m ModularMap
@@ -127,17 +128,22 @@ instance [Monad m] : MonadModMappedLCtx (ReaderT LocalContext m) where
   getModMappedLCtx := read
   withSetModMappedLCtx lctx := withReader (fun _ => lctx)
 
+abbrev MatchExtMap := Std.HashMap MVarId (Array MatchToExtend)
+
 class MonadMatchExt (m) [Monad m] where
-  addMatchExtension : MatchToExtend → m Unit
-  getMatchExtensions : m (Std.HashMap MVarId MatchToExtend)
-export MonadMatchExt (addMatchExtension getMatchExtensions)
+  getMatchExtensions : m MatchExtMap
+  modifyMatchExtensions : (MatchExtMap → MatchExtMap) → m Unit
+
+export MonadMatchExt (getMatchExtensions modifyMatchExtensions)
 
 instance [Monad m] : MonadMatchExt (StateT ModularState m) where
-  addMatchExtension ext := modify fun m => {m with matchesToExtend := m.matchesToExtend.insert ext.mvar ext}
   getMatchExtensions := get >>= pure ∘ ModularState.matchesToExtend
+  modifyMatchExtensions f := modify fun m => {m with matchesToExtend := f m.matchesToExtend}
+
+def addMatchExtension [Monad m] [MonadMatchExt m] (mvar : MVarId) (ext : Array MatchToExtend) : m Unit:= modifyMatchExtensions fun m => m.insert mvar ext
 
 instance [Monad m] [MonadMatchExt m] : MonadMatchExt (ReaderT ρ m) where
-  addMatchExtension ext _ := addMatchExtension ext
+  modifyMatchExtensions f _ := modifyMatchExtensions f
   getMatchExtensions _ := getMatchExtensions
 
 /-- Modularity monad. Builds on top of `TermElabM`. Contains:
@@ -161,7 +167,7 @@ def liftModularM (k : ModularM α) : ModularElabM α := fun lctx map => do
   let (res,state) ← liftTermElabM (k lctx ⟨map,{}⟩)
   return (res,state.toModularElabState)
 
-def withLiftModularM (k : ModularM Unit) (k' : Std.HashMap MVarId MatchToExtend → ModularElabM α) : ModularElabM α := fun lctx map => do
+def withLiftModularM (k : ModularM Unit) (k' : Std.HashMap MVarId (Array MatchToExtend) → ModularElabM α) : ModularElabM α := fun lctx map => do
   let (_,state) ← liftTermElabM (k lctx ⟨map,{}⟩)
   k' state.matchesToExtend |>.run lctx state.toModularElabState
 

@@ -12,6 +12,7 @@ structure MatcherBundle where
   matchType : Expr
   lhss : List AltLHS
   rhss : Array Expr
+deriving Inhabited
 
 def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   trace[Modular.Match] "mkMatcherBundle {e}"
@@ -98,9 +99,9 @@ def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) 
           throwError (mkRedundantAlternativeMsg none pats)
       i := i + 1
 
-
-def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
-  let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
+/- TODO actually merge matcher bundles here. For now, it simply picks the first one and does the same thing as before-/
+def MatcherBundle.mkMatcher (m : Array MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
+  let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m[0]!
   unless oldlhss.length == oldrhss.size do
     throwError "Unexpected error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
   trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
@@ -165,3 +166,65 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let r := mkAppN r rhss
   trace[Modular.Match] "result: {r}"
   return r
+
+structure MatchClause where
+  ref  : Syntax
+  name : Name
+  argNames : Array Name
+  alts : Array Term.TermMatchAltView
+
+def elabModularWhereMatch (stx : Syntax) : MatchClause :=
+  let name := stx[1].getId
+  let argNames := stx[2].getArgs.map Syntax.getId
+  let alts := stx[4].getArgs.filterMap (Term.getMatchAlt `term)
+  { ref := stx, name, argNames, alts }
+
+-- TODO generalize to mode than ModularM and put in a more appropriate place ?
+def withArgNames (argNames : Array Name) (k : ModularM α): ModularM α := do
+  let mut lctx ← getLCtx
+  let hyps ← getLocalHyps
+  for argName in argNames, hyp in hyps do
+    lctx := lctx.setUserName hyp.fvarId! argName
+  withTheReader Meta.Context ({· with lctx := lctx})
+    k
+
+def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
+  unless matchExt.size != 0 do
+    throwError "Unexpected: attempted to extend the merging of 0 matchers"
+  let {ref, name, alts, argNames} := matchClause
+  if ← mvar.isAssigned then return
+  withRef ref do
+  -- We consider the first matcher in the array to be "canonical", in that its name will be used
+  let {matchName, mvar := matchmvar, originalLCtx,..} := matchExt[0]!
+  unless mvar == matchmvar do
+    throwError "ohno"
+  trace[Modular.Elab] "Elaborating matcher : {name} {Expr.mvar mvar}"
+  let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
+  unless Name.mkSimple matchName = name do
+    throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
+  let mut matcherBundles := #[]
+  for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExt do
+    let mvarDecl ← matchmvar.getDecl
+    withSetModMappedLCtx mvarDecl.lctx do←
+    withLCtx' originalLCtx do←
+      trace[Modular.Elab] "originalMatch : {originalMatch}"
+      trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
+      let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
+      trace[Modular.Elab] "matcherBundle generated"
+      let matcherBundle ← matcherBundle.modMap modMappedRhss
+      trace[Modular.Elab] "matcherBundle modmapped"
+      trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
+      matcherBundles := matcherBundles.push matcherBundle
+  let mvarDecl ← mvar.getDecl
+  withSetModMappedLCtx mvarDecl.lctx do
+  withModMappedLCtx do
+  withArgNames argNames do
+  Term.withDeclName newFunName do
+    let newMatcherExpr ← MatcherBundle.mkMatcher matcherBundles alts
+    mvar.assign newMatcherExpr
+
+def elabModMatchNoClauses (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
+  unless matchExt.size != 0 do
+    throwError "Unexpected: attempted to extend the merging of 0 matchers"
+  let .str _ name := matchExt[0]!.matchName | throwError "Unexpected match name {matchExt[0]!.matchName}"
+  elabModMatch newFunName mvar matchExt ⟨.missing, .mkSimple name,#[],#[]⟩

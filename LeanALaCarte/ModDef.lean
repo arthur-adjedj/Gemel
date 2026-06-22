@@ -103,32 +103,12 @@ def addEqnMappings (oldName newName : Name) : ModularM Unit := do
 def modular_where_match_clause := leading_parser
   "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
 
-structure MatchClause where
-  ref  : Syntax
-  name : Name
-  argNames : Array Name
-  alts : Array Term.TermMatchAltView
-
-def elabModularWhereMatch (stx : Syntax) : MatchClause :=
-  let name := stx[1].getId
-  let argNames := stx[2].getArgs.map Syntax.getId
-  let alts := stx[4].getArgs.filterMap (Term.getMatchAlt `term)
-  { ref := stx, name, argNames, alts }
-
 syntax (name := modular_mod_def)
-  declModifiers "mod" ws "def" (ident)? "extends" ident ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+  declModifiers "mod" ws "def" (ident)? "extends" (ident),+ ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=
     m!"{m.declName} := {m.value} : {m.type}"
-
-def withArgNames (argNames : Array Name) (k : ModularM α): ModularM α := do
-  let mut lctx ← getLCtx
-  let hyps ← getLocalHyps
-  for argName in argNames, hyp in hyps do
-    lctx := lctx.setUserName hyp.fvarId! argName
-  withTheReader Meta.Context (fun s => {s with lctx := lctx})
-    k
 
 def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × Array Expr × Array Expr) := do
   let mut mvars := []
@@ -165,45 +145,16 @@ def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (ma
   addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
   trace[Modular.Elab] "Predefs elaborated successfully"
 
-def elabModMatch (newFunName : Name) (matchExt : MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
-  let {matchName, mvar, originalMatch, modMappedRhss, originalLCtx} := matchExt
-  let {ref, name, alts, argNames} := matchClause
-  if ← mvar.isAssigned then return
-  withRef ref do
-  trace[Modular.Elab] "Elaborating matcher : {name} {Expr.mvar mvar}"
-  let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
-  unless Name.mkSimple matchName = name do
-    throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
-  let mvarDecl ← mvar.getDecl
-  withLCtx' originalLCtx do
-  withSetModMappedLCtx mvarDecl.lctx do
-    trace[Modular.Elab] "originalMatch : {originalMatch}"
-    trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
-    let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-    trace[Modular.Elab] "matcherBundle generated"
-    let matcherBundle ← matcherBundle.modMap modMappedRhss
-    trace[Modular.Elab] "matcherBundle modmapped"
-    trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
-    withModMappedLCtx do
-    withArgNames argNames do
-    Term.withDeclName newFunName do
-      let newMatcherExpr ← matcherBundle.mkMatcher alts
-      mvar.assign newMatcherExpr
-
-def elabModMatchNoClauses (newFunName : Name) (matchExt : MatchToExtend) : ModularM Unit := do
-  let .str _ name := matchExt.matchName | throwError "Unexpected match name {matchExt.matchName}"
-  elabModMatch newFunName matchExt ⟨.missing, .mkSimple name,#[],#[]⟩
-
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $decls:declModifiers mod def $[$newFunStx?]? extends $oldFun $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
+  | `(modular_command| $decls:declModifiers mod def $[$newFunStx?]? extends $[$oldFuns],* $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
     let modifiers ← elabModifiers decls
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
-    let oldFunName ← realizeGlobalConstNoOverloadWithInfo oldFun
-    let oldFunCinfo ← getConstInfo oldFunName
-    unless oldFunCinfo.hasValue (allowOpaque := true) do
+    let oldFunNames ← oldFuns.mapM fun oldFun => realizeGlobalConstNoOverloadWithInfo oldFun
+    let oldFunCinfos ← oldFunNames.mapM getConstInfo
+    unless oldFunCinfos.all (·.hasValue (allowOpaque := true)) do
       throwError "`mod def` can only extend declarations defined with `def` or `theorem`"
     let expandedDeclId ← withRef? newFunStx? do
       let newFunStx :=
@@ -249,20 +200,20 @@ meta def elabModDef : ModularElab := fun stx =>
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
         -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
-        let matchExtensions ← matchExtensions.valuesArray.filterM fun {mvar,..} => notM mvar.isAssigned
+        let matchExtensions ← matchExtensions.toArray.filterM fun (mvar,_) => notM mvar.isAssigned
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
-        for matchExt in matchExtensions do
+        for (mvar,matchExt) in matchExtensions do
             try
-              withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.matchName} without adding new branches") do
-                elabModMatchNoClauses newFunName matchExt
-                trace[Modular.Elab] "Elaboration of matcher {matchExt.matchName} succeeded without adding new branches"
+              withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.map (·.matchName)} without adding new branches") do
+                elabModMatchNoClauses newFunName mvar matchExt
+                trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
             catch | _ => continue
-        let matchExtensions ← matchExtensions.filterM fun {mvar,..} => notM mvar.isAssigned
+        let matchExtensions ← matchExtensions.filterM fun (mvar,_) => notM mvar.isAssigned
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then
           throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
-        for matchExt in matchExtensions, matchClause in matchClauses do
-          elabModMatch newFunName matchExt matchClause
+        for (mvar,matchExt) in matchExtensions, matchClause in matchClauses do
+          elabModMatch newFunName mvar matchExt matchClause
         -- We solve mvars generated by extended matches separately
         let mvars ← mvars.mapM getDelayedMVarRoot
         let mvars ← mvars.filterM (notM ·.isAssigned)

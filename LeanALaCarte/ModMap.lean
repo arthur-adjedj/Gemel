@@ -52,11 +52,11 @@ partial def modMapAux (e : Expr): ModularM Expr := do
   trace[Modular.Subst] "matcher mvar : {mvar}"
   -- We must compute the modmapped rhss early to report of any potential matchers needing extension
   let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
-  addMatchExtension { matchName := fnName
-                      mvar := mvar.mvarId!
-                      originalMatch := e
-                      modMappedRhss := rhss
-                      originalLCtx := ← getLCtx }
+  addMatchExtension mvar.mvarId! #[{ matchName := fnName
+                                     mvar := mvar.mvarId!
+                                     originalMatch := e
+                                     modMappedRhss := rhss
+                                     originalLCtx := ← getLCtx }]
   return mvar
 
 where
