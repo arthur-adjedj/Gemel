@@ -61,18 +61,22 @@ def solveGoalsWithTactic (tac : Syntax) (goals : List MVarId) : TermElabM Unit :
 
 structure MappedHeader where
   ref? : Option Syntax
-  cinfo : ConstantInfo
+  cinfos : Array ConstantInfo
   newName : Name
   shortNewName : Name
   isAux : Bool
   type : Expr
 deriving Inhabited
 
-def mkMappedDecl (oldName newName : Name) (shortNewName : Name := newName) (isAux := true) (ref? : Option Syntax := none): ModularM MappedHeader := do
-  let cinfo ← getConstInfo oldName
-  let type ← modMap cinfo.type
-  assert! !type.hasMVar
-  return { ref?, cinfo, newName, shortNewName, isAux, type }
+def mkMappedDecl (oldNames : Array Name) (newName : Name) (shortNewName : Name := newName) (isAux := true) (ref? : Option Syntax := none): ModularM MappedHeader := do
+  let cinfos ← oldNames.mapM fun oldName => getConstInfo oldName
+  let types ← cinfos.mapM fun cinfo => modMap cinfo.type
+  -- If any of the modmapped types only gets partially mapped, we fail. We could potentially ask users to fill in those holes, or we may even consider merging types here in the future.
+  unless types.any Expr.hasMVar do
+    throwError "ohno"
+  unless types[1:].any (types[0]! != · ) do
+    throwError "terrible"
+  return { ref?, cinfos, newName, shortNewName, isAux, type := types[0]! : MappedHeader}
 
 def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr → ModularM α) : ModularM α :=
   let rec loop (i : Nat) (fvars : Array Expr) := do
@@ -82,6 +86,16 @@ def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr →
         loop (i+1) (fvars.push fvar)
     else
       k fvars
+  loop 0 #[]
+
+def withMappedHeadersDeclss {α} (decls : Array (Array MappedHeader)) (k : Array (Array Expr) → ModularM α) : ModularM α :=
+  let rec loop (i : Nat) (fvarss : Array (Array Expr)) := do
+    if h : i < decls.size then
+      let headers := decls[i]
+      withMappedHeadersDecls headers fun fvars =>
+        loop (i+1) (fvarss.push fvars)
+    else
+      k fvarss
   loop 0 #[]
 
 def addUnfoldEqMapping (oldName newName : Name) : ModularM Unit := do
@@ -99,13 +113,6 @@ def addEqnMappings (oldName newName : Name) : ModularM Unit := do
   for oldEqn in oldEqns, newEqn in newEqns do
     addAuxMapping oldEqn newEqn
 
-
-def modular_where_match_clause := leading_parser
-  "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
-
-syntax (name := modular_mod_def)
-  declModifiers "mod" ws "def" (ident)? "extends" (ident),+ ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
-
 instance : ToMessageData PreDefinition where
   toMessageData m :=
     m!"{m.declName} := {m.value} : {m.type}"
@@ -114,9 +121,10 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
   let mut mvars := []
   let mut mappedValues := #[]
   let mut mappedTypes := #[]
-  for {cinfo, newName, isAux, type, ..} in mapHeaders do
+  -- TODO merge modmapped values here
+  for {cinfos , newName, isAux, type, ..} in mapHeaders do
     trace[Modular.Elab] "elaborating {newName}"
-    let mut mappedValue ← modMapValueOrEqDefRhs cinfo isAux
+    let mut mappedValue ← modMapValueOrEqDefRhs cinfos[0]! isAux
     let newMvars ← getMVarsNoDelayed mappedValue
     mvars := newMvars.toList ++ mvars
     mappedValues := mappedValues.push mappedValue
@@ -130,10 +138,10 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
 
 def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (mapHeaders : Array MappedHeader) (mappedValues mappedTypes : Array Expr): ModularM Unit := do
   let mut predefs : Array PreDefinition:= #[]
-  for {ref?, cinfo, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
+  for {ref?, cinfos, newName, isAux, ..} in mapHeaders, mappedValue in mappedValues, mappedType in mappedTypes do
     let predef := { ref := if isAux then .missing else ref?.getD .missing
-                    kind := cinfo.kind!
-                    levelParams := cinfo.levelParams
+                    kind := cinfos[0]!.kind! --TODO ensure all cinfos have the same kind somewhere ?
+                    levelParams := cinfos[0]!.levelParams
                     modifiers := modifiers
                     declName := newName
                     binders := .missing
@@ -145,52 +153,58 @@ def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (ma
   addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
   trace[Modular.Elab] "Predefs elaborated successfully"
 
+def modular_where_match_clause := leading_parser
+  "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
+
+syntax (name := modular_mod_def)
+  declModifiers "mod" ws "def" ident "extends" (ident),+ ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
+
 @[modular_elab modular_mod_def, incremental]
 meta def elabModDef : ModularElab := fun stx =>
   match stx with
-  | `(modular_command| $decls:declModifiers mod def $[$newFunStx?]? extends $[$oldFuns],* $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
+  | `(modular_command| $decls:declModifiers mod def $newFunStx extends $[$oldFuns],* $[where $match_clauses* $[finally $tacs]?]?  $termination_stx) => liftModularM do withRef stx do
     let modifiers ← elabModifiers decls
     let modifiers := modifiers
     let termination_hint ← elabTerminationHints termination_stx
     let oldFunNames ← oldFuns.mapM fun oldFun => realizeGlobalConstNoOverloadWithInfo oldFun
-    let oldFunCinfos ← oldFunNames.mapM getConstInfo
-    unless oldFunCinfos.all (·.hasValue (allowOpaque := true)) do
+    let oldFunCInfos ← oldFunNames.mapM getConstInfo
+    unless oldFunCInfos.all (ConstantInfo.hasValue (allowOpaque := true)) do
       throwError "`mod def` can only extend declarations defined with `def` or `theorem`"
-    let expandedDeclId ← withRef? newFunStx? do
-      let newFunStx :=
-        if let some newFunStx := newFunStx? then
-          newFunStx else
-        if let .str _ oldFunSuffix := oldFunName then mkIdent (.mkSimple oldFunSuffix) else oldFun
-      Term.expandDeclId (← getCurrNamespace) oldFunCinfo.levelParams newFunStx modifiers
+    unless oldFunCInfos[1:].all (oldFunCInfos[0]!.levelParams == ·.levelParams) do
+      throwError
+        "Functions getting extended do not all have the same universe level parameters" --TODO more accurate error message
+    let expandedDeclId ← withRef? newFunStx do
+      Term.expandDeclId (← getCurrNamespace) oldFunCInfos[0]!.levelParams newFunStx modifiers
     let newFunName := expandedDeclId.declName
     checkNotAlreadyDeclared newFunName
     let newShortName := expandedDeclId.shortName
-    let extraMapNames ←
+    let extraMapNames ← oldFunNames.flatMapM fun oldFunName => do
       if let some e ← getEqDef? oldFunName then
-        e.auxDefs oldFunName
+        return (← e.auxDefs oldFunName) |>.map (oldFunName, ·) |>.toArray
       else
-        auxDefs oldFunName
+        return (← auxDefs oldFunName) |>.map (oldFunName, ·) |>.toArray
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
     let mut mapHeaders := #[]
-    for oldAuxName in extraMapNames do
+    for (oldFunName,oldAuxName) in extraMapNames do
       let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
-      mapHeaders := mapHeaders.push (← mkMappedDecl oldAuxName newAuxName)
-    let mainDeclHeader ← mkMappedDecl oldFunName newFunName newShortName false
+      -- We don't attempt to merge auxiliary defs for now, it might make sense to try to later
+      mapHeaders := mapHeaders.push (← mkMappedDecl #[oldAuxName] newAuxName)
+    let mainDeclHeader ← mkMappedDecl oldFunNames newFunName newShortName false
     mapHeaders := mapHeaders.push mainDeclHeader
     withMappedHeadersDecls mapHeaders fun xs => do
       let add_temp_mappings (map : ModularMap):= do
         let mut mappings := []
-        for {cinfo, ..} in mapHeaders, x in xs do
+        for {cinfos, ..} in mapHeaders, x in xs do
           /- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
           The only culprit kind of auxiliary function I could find that does have more universes than the original declaration's is matchers. This is partly why they are abstracted away entirely in the modmapped term, and fresh matchers get elaborated in place of the original ones in `elabModMatch`.-/
-          unless cinfo.levelParams = oldFunCinfo.levelParams do
-            throwError s!"Unexpected: Unable to abstract auxiliary function {cinfo.name}: the original declaration has different level parameters ({cinfo.levelParams}) compared to {oldFunCinfo.name} (oldFunCinfo.levelParams)"
+          if let some errcinfo := cinfos.find? (·.levelParams == oldFunCInfos[0]!.levelParams) then
+            throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfos[0]!.name} (oldFunCinfo.levelParams)"
           let newMapEntry := {
             expr := x
             levelParams := []
             numArgs := 0
             numHoles := 0}
-          mappings :=  (oldFunName,newMapEntry)::mappings
+          mappings :=  cinfos.foldl (init := mappings) fun mappings cinfo => (cinfo.name,newMapEntry)::mappings
         return map.insertMany mappings
       -- mapped values are constructed in a temp map that contains the declarations being currently defined
       withSetMap (← add_temp_mappings (← getMap)) do
@@ -231,23 +245,23 @@ meta def elabModDef : ModularElab := fun stx =>
         Term.synthesizeSyntheticMVarsNoPostponing
         let mut mappedValues ← mappedValues.mapM instantiateMVars
         trace[Modular.Elab] "mapped values after instantiation: {mappedValues}"
-        let declsConsts := mapHeaders.map fun {cinfo, newName, ..} => mkConst newName (cinfo.levelParams.map Level.param)
+        let declsConsts := mapHeaders.map fun {cinfos, newName, ..} => mkConst newName (cinfos[0]!.levelParams.map Level.param)
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod def` generated unresolved metavariables"
         addDeclarationRangesFromSyntax newFunName stx
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
-        if let some newFunInfo := newFunStx? then
-          addConstInfo newFunInfo newFunName mainDeclHeader.type
+        addConstInfo newFunStx newFunName mainDeclHeader.type
     -- All is done, we can leave the `withMappedHeadersDecls` and `withSetMap` scopes and add the correct mappings to the environment
-    for {cinfo, newName, ..} in mapHeaders do
+    for {cinfos, newName, ..} in mapHeaders do
       let newMapEntry := {
-        expr := mkConst newName (cinfo.levelParams.map Level.param)
-        levelParams := cinfo.levelParams
+        expr := mkConst newName (cinfos[0]!.levelParams.map Level.param)
+        levelParams := cinfos[0]!.levelParams
         numArgs := 0
         numHoles := 0}
-      addMapEntry cinfo.name newMapEntry
-      addUnfoldEqMapping cinfo.name newName
-      addEqnMappings cinfo.name newName
+      cinfos.forM fun cinfo => do
+        addMapEntry cinfo.name newMapEntry
+        addUnfoldEqMapping cinfo.name newName
+        addEqnMappings cinfo.name newName
   | _ => throwUnsupportedSyntax
