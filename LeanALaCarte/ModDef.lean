@@ -124,6 +124,7 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
   let mut mappedTypes := #[]
   for {cinfos , newName, isAux, type, ..} in mapHeaders do
     trace[Modular.Elab] "elaborating {newName}"
+    trace[Modular.Elab] "Modmapping values of {cinfos.map (·.name)}"
     let tempMappedValues ← cinfos.mapM fun cinfo => modMapValueOrEqDefRhs cinfo isAux
     trace[Modular.Elab] "mapped values {tempMappedValues}"
     let mappedValue ← mergeExprs tempMappedValues
@@ -176,8 +177,7 @@ meta def elabModDef : ModularElab := fun stx =>
     unless oldFunCInfos[1:].all (oldFunCInfos[0]!.levelParams == ·.levelParams) do
       throwError
         "Functions getting extended do not all have the same universe level parameters" --TODO more accurate error message
-    let expandedDeclId ← withRef? newFunStx do
-      Term.expandDeclId (← getCurrNamespace) oldFunCInfos[0]!.levelParams newFunStx modifiers
+    let expandedDeclId ← Term.expandDeclId (← getCurrNamespace) oldFunCInfos[0]!.levelParams newFunStx modifiers
     let newFunName := expandedDeclId.declName
     checkNotAlreadyDeclared newFunName
     let newShortName := expandedDeclId.shortName
@@ -213,18 +213,18 @@ meta def elabModDef : ModularElab := fun stx =>
       withSetMap (← add_temp_mappings (← getMap)) do
       withAssignableSyntheticOpaque do
         let lctx ← getLCtx
-        let (mvars, mappedValues, mappedTypes) ← withReader (fun _ => lctx) do modmapHeaders mapHeaders
+        let (mvars, mappedValues, mappedTypes) ← withSetModMappedLCtx lctx do modmapHeaders mapHeaders
         trace[Modular.Elab] "Mapped values : {mappedValues}"
         let matchExtensions ← getMatchExtensions
         -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
         let matchExtensions ← matchExtensions.toArray.filterM fun (mvar,_) => notM mvar.isAssigned
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
         for (mvar,matchExt) in matchExtensions do
-            try
-              withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.map (·.matchName)} without adding new branches") do
-                elabModMatchNoClauses newFunName mvar matchExt
-                trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
-            catch | _ => continue
+          try
+            withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.map (·.matchName)} without adding new branches") do
+              elabModMatchNoClauses newFunName mvar matchExt
+              trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
+          catch | _ => continue
         let matchExtensions ← matchExtensions.filterM fun (mvar,_) => notM mvar.isAssigned
         let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
         if matchExtensions.size != matchClauses.size then

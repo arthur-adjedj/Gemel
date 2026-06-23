@@ -14,20 +14,25 @@ partial def mergeExprsBin (e₁ e₂ : Expr) : ModularM Expr :=
   match e₁, e₂ with
   -- Where the real magic happens
   | .mvar m, e | e, .mvar m => do
-    let fallback _ := do
-      -- If nothing interesting is happening between the mvars, we just return the first one.. ?
-      -- TODO some better fallback is probably possible, eg if one of the mvars is a matcher and the other is not
-      -- TODO maybe assign `m'` to `m` when possible ?
-      return e
-    let .mvar m' := e | fallback ()
+    let .mvar m' := e
+      | m.assign e
+        return e
+    let m ← getDelayedMVarRoot m
+    let m' ← getDelayedMVarRoot m'
     let exts ← getMatchExtensions
-    let some matchers₁ := exts.get? m | fallback ()
-    let some matchers₂ := exts.get? m' | fallback ()
+    let some matchers₁ := exts.get? m
+      | trace[Modular.MergeExprs] "{Expr.mvar m} is not a matcher"
+        return e
+    let some matchers₂ := exts.get? m'
+      | trace[Modular.MergeExprs] "{Expr.mvar m'} is not a matcher"
+        return e
+    trace[Modular.MergeExprs] "Merging matchers {matchers₁.map (·.matchName)} and {matchers₂.map (·.matchName)}"
     modifyMatchExtensions (· |>.erase m' |>.insert m (matchers₁ ++ matchers₂))
     return e₁
   | .bvar _, .bvar _
   | .fvar _, .fvar _
   | .lit _, .lit _
+  | .const .., .const ..
   | .sort _, .sort _ => do
     unless e₁ == e₂ do --might be too strict ? what about let-bound or proof-irrelevant fvars ?
       throwNotSameShape e₁ e₂

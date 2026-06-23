@@ -373,5 +373,6 @@ initialize
   registerTraceClass `Modular.Elab (inherited := true)
   registerTraceClass `Modular.Subst (inherited := true)
   registerTraceClass `Modular.Match (inherited := true)
+  registerTraceClass `Modular.MergeExprs (inherited := true)
 
 end

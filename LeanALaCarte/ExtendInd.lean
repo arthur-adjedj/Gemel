@@ -187,8 +187,9 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM (List Extended
       indNames := indNames.push indName.eraseMacroScopes
     let indVals ← indNames.mapM getConstInfoInduct
     let {levelParams, type := origType, numParams := baseNumParams,  ..} := indVals[0]!
-    unless ← indVals[1:].allM (fun indVal => pure (indVal.levelParams == levelParams) <&&> isDefEq indVal.type origType) do
-      throwError "invalid types between inductives being extended"
+    unless indVals[1:].all (·.levelParams == levelParams) do
+      throwError "Different level params between inductives being extended"
+    -- TODO check that the modmapped type of each indval is DefEq
     unless declaredParams.size <= baseNumParams do
       throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
     if declaredParams.size > 0 then
