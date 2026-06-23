@@ -72,9 +72,9 @@ def mkMappedDecl (oldNames : Array Name) (newName : Name) (shortNewName : Name :
   let cinfos ← oldNames.mapM fun oldName => getConstInfo oldName
   let types ← cinfos.mapM fun cinfo => modMap cinfo.type
   -- If any of the modmapped types only gets partially mapped, we fail. We could potentially ask users to fill in those holes, or we may even consider merging types here in the future.
-  unless types.any Expr.hasMVar do
+  if types.any Expr.hasMVar then
     throwError "ohno"
-  unless types[1:].any (types[0]! != · ) do
+  if types[1:].any (types[0]! != · ) then
     throwError "terrible"
   return { ref?, cinfos, newName, shortNewName, isAux, type := types[0]! : MappedHeader}
 
@@ -197,8 +197,8 @@ meta def elabModDef : ModularElab := fun stx =>
         for {cinfos, ..} in mapHeaders, x in xs do
           /- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
           The only culprit kind of auxiliary function I could find that does have more universes than the original declaration's is matchers. This is partly why they are abstracted away entirely in the modmapped term, and fresh matchers get elaborated in place of the original ones in `elabModMatch`.-/
-          if let some errcinfo := cinfos.find? (·.levelParams == oldFunCInfos[0]!.levelParams) then
-            throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfos[0]!.name} (oldFunCinfo.levelParams)"
+          if let some errcinfo := cinfos.find? (·.levelParams != oldFunCInfos[0]!.levelParams) then
+            throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfos[0]!.name} ({oldFunCInfos[0]!.levelParams})"
           let newMapEntry := {
             expr := x
             levelParams := []
