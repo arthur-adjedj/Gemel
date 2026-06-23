@@ -5,6 +5,7 @@ public meta import LeanALaCarte.CollectAuxDefs
 public meta import Lean.Meta.Tactic.Try.Collect
 public import LeanALaCarte.AuxMapping
 public import LeanALaCarte.ExtendMatch
+public import LeanALaCarte.MergeModMaps
 public meta import Std.Do.Triple.SpecLemmas
 import Lean.Elab.PreDefinition.Basic
 
@@ -121,10 +122,12 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
   let mut mvars := []
   let mut mappedValues := #[]
   let mut mappedTypes := #[]
-  -- TODO merge modmapped values here
   for {cinfos , newName, isAux, type, ..} in mapHeaders do
     trace[Modular.Elab] "elaborating {newName}"
-    let mut mappedValue ← modMapValueOrEqDefRhs cinfos[0]! isAux
+    let tempMappedValues ← cinfos.mapM fun cinfo => modMapValueOrEqDefRhs cinfo isAux
+    trace[Modular.Elab] "mapped values {tempMappedValues}"
+    let mappedValue ← mergeExprs tempMappedValues
+    trace[Modular.Elab] "merged value {mappedValue}"
     let newMvars ← getMVarsNoDelayed mappedValue
     mvars := newMvars.toList ++ mvars
     mappedValues := mappedValues.push mappedValue
