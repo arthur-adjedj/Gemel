@@ -6,29 +6,61 @@ open Lean Meta
 public meta section
 
 
+partial def getDelayedMVarRoot' [Monad m] [MonadMCtx m] (mvarId : MVarId) : m (MVarId × Nat) := do
+  match (← getDelayedMVarAssignment? mvarId) with
+  | some d => do
+    let (m,n) ← getDelayedMVarRoot' d.mvarIdPending
+    return (m,n+d.fvars.size)
+  | none   => return (mvarId,0)
+
 def throwNotSameShape (e₁ e₂ : Expr) : CoreM α :=
   throwError "The following terms do not have the same shape, and thus cannot be merged: {indentExpr e₁} {indentExpr e₂}"
 
 -- For now, the algorithm is really naive and merges exprs 2 by 2. Once this is stable and works well enough, we can optimise this function to take an array of exprs instead, and match on the first one.
 partial def mergeExprsBin (e₁ e₂ : Expr) : ModularM Expr :=
-  match e₁, e₂ with
-  -- Where the real magic happens
-  | .mvar m, e | e, .mvar m => do
-    let .mvar m' := e
-      | m.assign e
-        return e
-    let m ← getDelayedMVarRoot m
-    let m' ← getDelayedMVarRoot m'
+  withIncRecDepth do
+  e₁.withApp fun fn₁ args₁ => do
+  e₂.withApp fun fn₂ args₂ => do
+  match fn₁,fn₂ with
+  | .mvar m₁, .mvar m₂ => do
+    let (m₁,_) ← getDelayedMVarRoot' m₁
+    let (m₂,_) ← getDelayedMVarRoot' m₂
+    let args ← mergeArgs args₁ args₂
     let exts ← getMatchExtensions
-    let some matchers₁ := exts.get? m
-      | trace[Modular.MergeExprs] "{Expr.mvar m} is not a matcher"
-        return e
-    let some matchers₂ := exts.get? m'
-      | trace[Modular.MergeExprs] "{Expr.mvar m'} is not a matcher"
-        return e
+    let some matchers₁ := exts.get? m₁
+      | trace[Modular.MergeExprs] "{Expr.mvar m₁} is not a matcher"
+        return (mkAppN fn₂ args)
+    let some matchers₂ := exts.get? m₂
+      | trace[Modular.MergeExprs] "{Expr.mvar m₂} is not a matcher"
+        return (mkAppN fn₁ args)
     trace[Modular.MergeExprs] "Merging matchers {matchers₁.map (·.matchName)} and {matchers₂.map (·.matchName)}"
-    modifyMatchExtensions (· |>.erase m' |>.insert m (matchers₁ ++ matchers₂))
-    return e₁
+    modifyMatchExtensions (· |>.erase m₁ |>.insert m₂ (matchers₁ ++ matchers₂))
+    return (mkAppN fn₁ args)
+  | .mvar m₁, _  => do
+      let (_,n₁) ← getDelayedMVarRoot' m₁
+      let n₂ := args₁.size - n₁
+      assert! n₂ >= args₂.size
+      let args ← mergeArgs args₁[n₁:] args₂[:n₂]
+      let res := mkAppN fn₂ args
+      return res
+  | _,.mvar m₂  => do
+      let (_,n₂) ← getDelayedMVarRoot' m₂
+      let n₁ := args₂.size - n₂
+      assert! n₁ >= args₁.size
+      let args ← mergeArgs args₁[n₁:] args₂[:n₂]
+      let res := mkAppN fn₁ args
+      return res
+  | _,_ => return mkAppN (← traverse fn₁ fn₂) (← mergeArgs args₁ args₂)
+
+where
+  @[inline]
+  mergeArgs (args₁ args₂ : Array Expr) := do
+    unless args₁.size = args₂.size do
+      throwError "Unexpected when merging exprs: not the same number of arguments: \n{args₁}\n{args₂} "
+    args₁.zipWithM (bs := args₂) mergeExprsBin
+
+  traverse (e₁ e₂ : Expr) : ModularM Expr :=
+  match e₁, e₂ with
   | .bvar _, .bvar _
   | .fvar _, .fvar _
   | .lit _, .lit _
