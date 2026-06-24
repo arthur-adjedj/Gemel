@@ -8,11 +8,24 @@ public meta section
 open Lean Elab Term Meta Match
 
 structure MatcherBundle where
+  lctx : LocalContext
   discrs : Array Discr
   matchType : Expr
   lhss : List AltLHS
   rhss : Array Expr
 deriving Inhabited
+
+def MatcherBundle.replaceLCtx (m : MatcherBundle) (lctx : LocalContext) : MatcherBundle := Id.run do
+  let oldFVars := m.lctx.getFVarIds
+  let newFVars := lctx.getFVars
+  let mut subst : FVarSubst := .empty
+  for oldFVar in oldFVars, newFVar in newFVars do
+    subst := subst.insert oldFVar newFVar
+  { lctx := lctx
+    discrs := m.discrs.map fun ⟨e,h?⟩ => ⟨subst.apply e,h?⟩
+    matchType := subst.apply m.matchType
+    lhss := m.lhss.map fun ⟨ref,fvarDecls,patterns⟩ => ⟨ref,fvarDecls.map (LocalDecl.applyFVarSubst subst),patterns.map (Match.Pattern.applyFVarSubst subst)⟩
+    rhss := m.rhss.map subst.apply }
 
 def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   trace[Modular.Match] "mkMatcherBundle {e}"
@@ -28,6 +41,7 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
   let discrsExpr := args[info.getFirstDiscrPos...(info.getFirstDiscrPos + info.numDiscrs)]
   let discrs := discrsExpr.toArray.zipWith (bs := info.discrInfos) fun e h => ⟨e,h.1.map (TSyntax.raw ∘ mkIdent)⟩
   let rhss := args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
+  let lctx ← getLCtx
   forallBoundedTelescope matcherType (some 1) fun _ ty => do
     let altTys ← forallTelescopeReducing ty fun matchBinders _ => matchBinders[info.numDiscrs...info.numDiscrs + info.numAlts].toArray.mapM inferType
     trace[Modular.Match] "altTys : {altTys}"
@@ -40,7 +54,7 @@ def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
       return { ref := .missing
                fvarDecls := fvarDecls.toList
                patterns := pats.toList }
-    return some {discrs, matchType, lhss := lhss.toList, rhss}
+    return some {lctx, discrs, matchType, lhss := lhss.toList, rhss}
 
 partial def Lean.Meta.Match.Pattern.modMap : Pattern → ModularM Pattern
   | Pattern.inaccessible e      => return Pattern.inaccessible (← _root_.modMap e)
@@ -82,7 +96,8 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
   trace[Modular.Match] "lhss translated"
   -- let rhss ← rhss.mapM _root_.modMap
   -- trace[Modular.Match] "rhss translated"
-  return {discrs, matchType, lhss, rhss := newRhss : MatcherBundle}
+  let lctx ← getModMappedLCtx
+  return {lctx, discrs, matchType, lhss, rhss := newRhss : MatcherBundle}
 
 /- Same as the core version, except it throws an error rather than log one-/
 def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) : TermElabM Unit := do
@@ -99,9 +114,11 @@ def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) 
           throwError (mkRedundantAlternativeMsg none pats)
       i := i + 1
 
-/- TODO actually merge matcher bundles here. For now, it simply picks the first one and does the same thing as before-/
-def MatcherBundle.mkMatcher (m : Array MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr := do
-  let {discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m[0]!
+def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr :=
+  withTraceNode `Modular.Elab (fun | .ok _ => return "Generating matcher from matcher bundle and added alts"
+                                   | .error e => return m!"Generating matcher from matcher bundle and added alts {e.toMessageData}") do
+  let {lctx, discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
+  withLCtx' lctx do
   unless oldlhss.length == oldrhss.size do
     throwError "Unexpected error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
   trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
@@ -123,32 +140,36 @@ def MatcherBundle.mkMatcher (m : Array MatcherBundle) (addedAlts : Array TermMat
   let mut updatedOldRhss := #[]
   let numNewDiscrs := discrs.size - oldDiscrs.size
   trace[Modular.Match] "new discrs : {discrs[0...numNewDiscrs].toArray.map Discr.expr}"
-    for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
-      let mut fvarDecls := fvarDecls
-      let mut patterns := patterns
-      let mut newRhs := rhs
-      for {expr := newIndex, ..} in discrs[0...numNewDiscrs] do
-        let indexType ← inferType newIndex
-        let newldcl ← withLocalDecl `x .default indexType fun fvar => FVarId.getDecl fvar.fvarId!
-        fvarDecls ← fvarDecls.mapM fun ldcl => do
-          let ty := (← kabstract ldcl.type newIndex).instantiate1 (Expr.fvar newldcl.fvarId)
-          pure (ldcl.setType ty)
-        fvarDecls := newldcl::fvarDecls
-        -- This feels so hacky............
-        patterns ← patterns.mapM fun pat => do
-          let e ← pat.toExpr
-          let e ← kabstract e newIndex
-          let e := e.instantiate1 (Expr.fvar newldcl.fvarId)
-          trace[Modular.Match] "pattern generalisation: {e}"
-          ToDepElimPattern.toPattern e
-        patterns := (Pattern.var newldcl.fvarId)::patterns
-        newRhs ← kabstract newRhs newIndex
-        newRhs := Expr.lam `x indexType newRhs .default
-        trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
-      updatedOldRhss := updatedOldRhss.push newRhs
-      updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
+  for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
+    trace[Modular.Match] "fvars before: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
+    let mut fvarDecls := fvarDecls
+    let mut patterns := patterns
+    let mut newRhs := rhs
+    for {expr := newIndex, ..} in discrs[0...numNewDiscrs] do
+      let indexType ← inferType newIndex
+      let newldcl ← withLocalDecl `x .default indexType fun fvar => FVarId.getDecl fvar.fvarId!
+      fvarDecls ← fvarDecls.mapM fun ldcl => do
+        let ty := (← kabstract ldcl.type newIndex).instantiate1 (Expr.fvar newldcl.fvarId)
+        pure (ldcl.setType ty)
+      fvarDecls := newldcl::fvarDecls
+      -- This feels so hacky............
+      patterns ← patterns.mapM fun pat => do
+        let e ← pat.toExpr
+        let e ← kabstract e newIndex
+        let e := e.instantiate1 (Expr.fvar newldcl.fvarId)
+        trace[Modular.Match] "pattern generalisation: {e}"
+        ToDepElimPattern.toPattern e
+      patterns := (Pattern.var newldcl.fvarId)::patterns
+      newRhs ← kabstract newRhs newIndex
+      newRhs := Expr.lam `x indexType newRhs .default
+      trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
+    trace[Modular.Match] "fvars after: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
+    updatedOldRhss := updatedOldRhss.push newRhs
+    updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
   let lhss := updatedOldLhss.toList ++ newlhss
   let rhss := updatedOldRhss ++ newrhss
+  trace[Modular.Match] "lhss : {← lhss.mapM fun lhs => lhs.patterns.mapM fun p => p.toExpr}"
+  trace[Modular.Match] "rhss : {rhss}"
   unless lhss.length == rhss.size do
     throwError "Unexpected error: number of lhs ({lhss.length}) and rhs ({rhss.size}) in generated match differ"
   let numDiscrs := discrs.size
@@ -180,13 +201,44 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   { ref := stx, name, argNames, alts }
 
 -- TODO generalize to mode than ModularM and put in a more appropriate place ?
-def withArgNames (argNames : Array Name) (k : ModularM α): ModularM α := do
+def withArgNames [Monad m] [self : MonadLCtx m] [MonadControlT MetaM m] (argNames : Array Name) (k : m α): m α := do
   let mut lctx ← getLCtx
   let hyps ← getLocalHyps
   for argName in argNames, hyp in hyps do
     lctx := lctx.setUserName hyp.fvarId! argName
-  withTheReader Meta.Context ({· with lctx := lctx})
-    k
+  withLCtx' lctx k
+
+def _root_.Lean.LocalContext.toMessageData (lctx : LocalContext) : MessageData :=
+  let fvarNames := lctx.getFVarIds.map (fun fvar => fvar.name)
+  m!"{fvarNames}"
+  -- withLCtx' lctx do
+    -- let mvar ← mkFreshExprMVar none
+    -- return m!"{mvar.mvarId!}"
+
+def mergeMatcherBundles (ms : Array MatcherBundle) : TermElabM MatcherBundle :=
+  withTraceNode `Modular.Elab (fun | .ok _ => return m!"Merging matcherBundles"
+                                   | .error e => return m!"Merging matcherBundles : {e.toMessageData}") do
+  if _ : ms.size = 0 then
+    throwError "Unexpected: empty array of matcher bundles"
+  else if _ : ms.size = 1 then
+    return ms[0]
+  else
+    let mut res := ms[0]
+    for m in ms[1:] do
+      let {lctx, discrs, matchType, lhss, rhss} := m.replaceLCtx res.lctx
+      -- for ⟨e₁,_⟩ in res.discrs, ⟨e₂,_⟩ in discrs do
+        -- TODO be more permissive eg by using isDefEq ? If so, make sure to work in the right lctx
+        -- let e₁' := e₁.abstr res.lctx.getFVars
+        -- let e₂' := e₂.abstract lctx.getFVars
+        -- unless e₁' == e₂' do
+          -- throwError "Unable to merge matches: discriminants {e₁'} and {e₂'} are not defeq."
+      -- TODO be more permissive eg by using isDefEq ? If so, make sure to work in the right lctx
+      -- unless res.matchType.abstract res.lctx.getFVars == matchType.abstract lctx.getFVars do
+        -- throwError "Unable to merge matches: match types {res.matchType} and {matchType} are not defeq."
+      -- the merging of lhss/rhss is naive and doesn't allow for diamonds here
+      -- TODO do better
+      res := {res with lhss := res.lhss ++ lhss, rhss := res.rhss ++ rhss}
+    return res
 
 def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
   unless matchExt.size != 0 do
@@ -203,24 +255,28 @@ def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToEx
   unless Name.mkSimple matchName = name do
     throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
   let mut matcherBundles := #[]
-  for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExt do
-    let mvarDecl ← matchmvar.getDecl
-    withSetModMappedLCtx mvarDecl.lctx do←
-    withLCtx' originalLCtx do←
-      trace[Modular.Elab] "originalMatch : {originalMatch}"
-      trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
-      let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-      trace[Modular.Elab] "matcherBundle generated"
-      let matcherBundle ← matcherBundle.modMap modMappedRhss
-      trace[Modular.Elab] "matcherBundle modmapped"
-      trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
-      matcherBundles := matcherBundles.push matcherBundle
+  withTraceNode `Modular.Elab (fun _ => return "Generating Matcher bundles") do←
+    for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExt do
+      let mvarDecl ← matchmvar.getDecl
+      withSetModMappedLCtx mvarDecl.lctx do←
+      withLCtx' originalLCtx do←
+        trace[Modular.Elab] "originalMatch : {originalMatch}"
+        trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
+        let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
+        trace[Modular.Elab] "matcherBundle generated"
+        let matcherBundle ←
+          withTraceNode `Modular.Elab (fun _ => return "Modmapping matcherBundle") do
+            matcherBundle.modMap modMappedRhss
+        trace[Modular.Elab] "matcherBundle modmapped"
+        trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
+        matcherBundles := matcherBundles.push matcherBundle
   let mvarDecl ← mvar.getDecl
   withSetModMappedLCtx mvarDecl.lctx do
   withModMappedLCtx do
   withArgNames argNames do
   Term.withDeclName newFunName do
-    let newMatcherExpr ← MatcherBundle.mkMatcher matcherBundles alts
+    let m ← mergeMatcherBundles matcherBundles
+    let newMatcherExpr ← MatcherBundle.mkMatcher m alts
     mvar.assign newMatcherExpr
 
 def elabModMatchNoClauses (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do

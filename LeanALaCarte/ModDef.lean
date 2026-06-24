@@ -221,7 +221,7 @@ meta def elabModDef : ModularElab := fun stx =>
         -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
         for (mvar,matchExt) in matchExtensions do
           try
-            withTraceNode `Modular.Elab (fun _ => return s!"Trying to Elaborate matcher {matchExt.map (·.matchName)} without adding new branches") do
+            withTraceNode `Modular.Elab (fun _ => return m!"Trying to Elaborate matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches") do
               elabModMatchNoClauses newFunName mvar matchExt
               trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
           catch | _ => continue
