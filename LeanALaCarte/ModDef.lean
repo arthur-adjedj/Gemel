@@ -106,12 +106,29 @@ def addUnfoldEqMapping (oldName newName : Name) : ModularM Unit := do
   trace[Modular.Elab] "newEqns : {newEqn}"
   addAuxMapping oldEqn newEqn
 
+def mapOldToNewEqnLemmas (oldName newName : Name) : ModularM (Option (AssocList Name Name)) := do
+  let mut some oldEqns ← getEqnsFor? oldName | return none
+  let mut some newEqns ← getEqnsFor? newName | return none
+  let mut res := AssocList.empty
+  for i in [:oldEqns.size] do
+    for j in [:newEqns.size] do
+      if (← areCompatible oldEqns[i]! newEqns[j]!) then
+        res := res.cons oldEqns[i]! newEqns[j]!
+  return res
+where
+  areCompatible (oldEqnName newEqnName : Name) : ModularM Bool := do
+    let oldEqn ← getConstInfo oldEqnName
+    let newEqn ← getConstInfo newEqnName
+    let oldTy ← modMap oldEqn.type
+    let newTy := newEqn.type
+    let (_,_,oldTy) ← forallMetaTelescopeReducing oldTy
+    let (_,_,newTy) ← forallMetaTelescopeReducing newTy
+    isDefEqGuarded oldTy newTy
+
 def addEqnMappings (oldName newName : Name) : ModularM Unit := do
-  let some oldEqns ← getEqnsFor? oldName | return
-  let some newEqns ← getEqnsFor? newName | return
-  trace[Modular.Elab] "oldEqns : {oldEqns}"
-  trace[Modular.Elab] "newEqns : {newEqns}"
-  for oldEqn in oldEqns, newEqn in newEqns do
+  let some eqnMappings ← mapOldToNewEqnLemmas oldName newName | return
+  trace[Modular.Elab] "eqnMappings : {eqnMappings.toList}"
+  for (oldEqn, newEqn) in eqnMappings do
     addAuxMapping oldEqn newEqn
 
 instance : ToMessageData PreDefinition where

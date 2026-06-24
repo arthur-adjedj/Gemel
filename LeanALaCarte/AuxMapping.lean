@@ -15,7 +15,7 @@ def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) 
   let oldNumArgs := oldInfo.type.getNumHeadForalls
   let newNumArgs := newInfo.type.getNumHeadForalls
   unless oldNumArgs <= newNumArgs do
-    throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration has fewer arguments {indentExpr newInfo.type}({newNumArgs}) than the old one {indentExpr oldInfo.type}({oldNumArgs})"
+    throwError m!"Unexpected auxiliary mapping arity from `{oldName}` to `{newName}`\nThe new declaration :{indentExpr newInfo.type} \n has fewer arguments ({newNumArgs}) than the old one ({oldNumArgs}) {indentExpr oldInfo.type}"
   let numExtraArgs := newNumArgs - oldNumArgs
   let oldArgBVar (i : Nat) : Expr := mkBVar (oldNumArgs - 1 - i)
   let holeBVar (i : Nat) : Expr := mkBVar (oldNumArgs + (numExtraArgs - 1 - i))
