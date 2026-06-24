@@ -200,7 +200,7 @@ def elabModularWhereMatch (stx : Syntax) : MatchClause :=
   let alts := stx[4].getArgs.filterMap (Term.getMatchAlt `term)
   { ref := stx, name, argNames, alts }
 
--- TODO generalize to mode than ModularM and put in a more appropriate place ?
+-- TODO this doesn't seem to work anymore ? investigate..
 def withArgNames [Monad m] [self : MonadLCtx m] [MonadControlT MetaM m] (argNames : Array Name) (k : m α): m α := do
   let mut lctx ← getLCtx
   let hyps ← getLocalHyps
