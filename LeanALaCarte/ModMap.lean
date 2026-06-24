@@ -19,14 +19,15 @@ partial def modMapAux (e : Expr): ModularM Expr := do
   -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
   if let some ext := (← getMap)[fnName.eraseMacroScopes]? then
     --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
+    -- TODO this is currently the "wrong" way to know the number of arguments needed since the current norm is that `numArgs` explicits the number of instantiated arguments, not the number of application arguments. `numArgs + numHoles` also doesn't work, consider a translation mapping eg `foo a` to `bar (?_ + a)`.
     unless ext.numArgs <= args.size do
       let e ← Meta.etaExpand e
       return (← withTraceNode `Modular.Subst (fun _ => return m!"Eta-expanding expression") do modMapAux e)
     let newArgs ← modMapArgs args
+    trace[Modular.Subst] m!"expr to instantiate : {ext.expr}"
     let res := ext.expr
       |>.instantiateLevelParams ext.levelParams lvls
       |>.instantiateRev newArgs[:ext.numArgs]
-    let res ← modMapAux res
     trace[Modular.Subst] m!"args instantiated : {res}"
     trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
     -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
@@ -36,7 +37,7 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     trace[Modular.Subst] m!"mvars instantiated : {res}"
     let res := mkAppN res newArgs[ext.numArgs:]
     trace[Modular.Subst] m!"with extra args : {res}"
-    return res
+    return ← modMapAux res
   let fallback _ : ModularM Expr := do
     let newArgs ← modMapArgs args
     let res := (mkAppN fn newArgs)
