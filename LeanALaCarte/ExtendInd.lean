@@ -258,7 +258,6 @@ def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : 
   mkAuxName.forM fun mkAuxName =>
     mkAuxMappingIfValid (mkAuxName oldName) (mkAuxName newName)
 
--- TODO this algorithm is too naive, and should ideally be type-directed to make everything work well.
 def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let oldRecVal ← getConstInfoRec oldRecName
   let newRecVal ← getConstInfoRec newRecName
@@ -267,15 +266,15 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let numOldMotives := oldRecVal.numMotives
   let numOldMinors := oldRecVal.numMinors
   let numNewMotives := newRecVal.numMotives - numOldMotives
+  assert! numNewMotives = 0 -- We don't support extending a non-nested type into a nested one for now
   let numNewMinors := newRecVal.numMinors - numOldMinors
-  let numArgs := numParams + numOldMotives + numOldMinors + 1
+  let numArgs := numParams + numOldMotives + numOldMinors
   let numHoles := numNewMotives + numNewMinors
   let mut recArgs : Array Expr := #[]
-  for i in [:numParams + numOldMotives + numOldMinors] do
-    recArgs := recArgs.push (mkBVar (numParams + numOldMotives + numOldMinors - i))
+  for i in [:numArgs] do
+    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
   for i in [:numHoles] do
-    recArgs := recArgs.push (mkBVar (numParams + numOldMotives + numOldMinors + numHoles - i))
-  recArgs := recArgs.push (mkBVar 0)
+    recArgs := recArgs.push (mkBVar (numArgs + numHoles - i - 1))
   let recExtExpr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
   let recExt : ModularExtension := {
     expr := recExtExpr
@@ -285,6 +284,37 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   }
   trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecVal.name recExt)
+
+/- Similar to `mkRecMapping`, except the minors map to the last minors, not the first-/
+def mkAddIndRecMapping (oldRecName newRecName : Name): ModularM Unit := do
+  let oldRecVal ← getConstInfoRec oldRecName
+  let newRecVal ← getConstInfoRec newRecName
+  let numParams := oldRecVal.numParams
+  assert! numParams = newRecVal.numParams
+  let numOldMotives := oldRecVal.numMotives
+  let numOldMinors := oldRecVal.numMinors
+  let numNewMotives := newRecVal.numMotives - numOldMotives
+  assert! numNewMotives = 0 -- We don't support extending a non-nested type into a nested one for now
+  let numNewMinors := newRecVal.numMinors - numOldMinors
+  let numArgs := numParams + numOldMotives + numOldMinors
+  let numHoles := numNewMotives + numNewMinors
+  let mut recArgs : Array Expr := #[]
+  for i in [:numOldMotives] do
+    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
+  for i in [:numHoles] do
+    recArgs := recArgs.push (mkBVar (numArgs + numHoles - i - 1))
+  for i in [numOldMotives:numArgs] do
+    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
+  let recExtExpr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
+  let recExt : ModularExtension := {
+    expr := recExtExpr
+    levelParams := oldRecVal.levelParams
+    numArgs
+    numHoles
+  }
+  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
+  modifyMap (·.insert oldRecVal.name recExt)
+
 
 def addCtorsMappings (oldIndName : Name) (extendedInductive : ExtendedInd)  : ModularM Unit := do
   let newIndName := extendedInductive.newIndName
@@ -311,8 +341,7 @@ def IndExtension.AddInd.addMappings (extendedInductive : ExtendedInd) (a : AddIn
   addCtorsMappings oldIndName extendedInductive
   let newRecName := mkRecName newIndName
   let oldRecName := mkRecName oldIndName
-  -- TODO this currently only works if the inductive getting extended is empty. Otherwise, the mapping is very much incorrect.
-  mkRecMapping oldRecName newRecName
+  mkAddIndRecMapping oldRecName newRecName
   -- TODO `rec_on` is currently no handled correctly
   let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
   mkAuxMappings mkAuxNames oldIndName newIndName
@@ -348,13 +377,13 @@ meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
 
 meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) : ModularM (List Constructor) := do
   let newIndName := extendedInd.newIndName
-  trace[Modular.Elab] m!"Elaborating extended inductive {extendedInd.newIndName}"
+  withTraceNode `Modular.Elab (fun _ => pure m!"Elaborating extended inductive {newIndName}") do
   let extendedInductive ← extendedInd.toInductiveType oldIndName? oldCtors
   -- In order to avoid name conflicts between ctors of auxiliary inductives, we first elaborate ctor names without a scope, then prepend said ctors with the right names
   let extendedInductive := {extendedInductive with ctors := extendedInductive.ctors.map fun ctor => {ctor with name := extendedInductive.name ++ ctor.name}}
   trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
   addAndCompile (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
-  compileDecls #[extendedInd.newIndName]
+  compileDecls #[newIndName]
   mkAuxConstructions newIndName
   extendedInd.addInductiveMappings oldIndName?
   trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
