@@ -49,9 +49,9 @@ partial def modMapAux (e : Expr): ModularM Expr := do
   let mvar ← do
     let mvar_ty ← modMapAux (← inferType e)
     trace[Modular.Subst] "new matcher type : {mvar_ty}"
-    withLCtx' (← getModMappedLCtx) do mkFreshExprMVar mvar_ty .syntheticOpaque
+    withModMappedLCtx do mkFreshExprMVar mvar_ty .syntheticOpaque
   trace[Modular.Subst] "matcher mvar : {mvar}"
-  -- We must compute the modmapped rhss early to report of any potential matchers needing extension
+  -- We must compute the modmapped rhss early to report of any potential matchers needing extension in those rhss
   let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
   addMatchExtension mvar.mvarId! #[{ matchName := fnName
                                      mvar := mvar.mvarId!
@@ -61,9 +61,8 @@ partial def modMapAux (e : Expr): ModularM Expr := do
   return mvar
 
 where
-  modMapArgs args := args.foldlM (init := Array.emptyWithCapacity args.size) fun nargs e => do
-    let arg ← modMapAux e
-    return nargs.push arg
+  @[inline]
+  modMapArgs args := args.mapM modMapAux
 
   traverse e: ModularM Expr := match e with
     | .sort _
