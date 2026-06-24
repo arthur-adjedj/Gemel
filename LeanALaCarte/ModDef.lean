@@ -123,7 +123,7 @@ where
     let newTy := newEqn.type
     let (_,_,oldTy) ← forallMetaTelescopeReducing oldTy
     let (_,_,newTy) ← forallMetaTelescopeReducing newTy
-    isDefEqGuarded oldTy newTy
+    withTransparency .none (isDefEq oldTy newTy)
 
 def addEqnMappings (oldName newName : Name) : ModularM Unit := do
   let some eqnMappings ← mapOldToNewEqnLemmas oldName newName | return
