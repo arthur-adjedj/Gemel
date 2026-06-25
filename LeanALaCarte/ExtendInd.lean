@@ -21,6 +21,15 @@ structure ExtendedInd where
   type : Expr
   extension : IndExtension
 
+def mergeCtorList (oldCtors newCtors : List Constructor) : MetaM (List Constructor) := do
+  let newCtors ← newCtors.filterM fun newctor => do
+    if let some oldctor := oldCtors.find? (·.name == newctor.name) then
+      unless ← isDefEq oldctor.type newctor.type do
+        throwError "Cannot merge inductive types, both contain a constructor named {newctor.name}, but their respective translated types are incompatible : {indentExpr oldctor.type}\nIs not defeq with {indentExpr newctor.type} "
+      return false
+    return true
+  return oldCtors ++ newCtors
+
 def IndExtension.AddInd.modifyInductiveType (e : ExtendedInd) (indFVar : Expr) (tempIndExt : ModularExtension) (oldCtors : List Constructor)(addInd : AddInd): ModularM InductiveType := do
   let indVal ← getConstInfoInduct addInd.indName
   let inheritedCtors ← indVal.ctors.mapM getConstInfoCtor
@@ -41,14 +50,17 @@ def IndExtension.AddInd.modifyInductiveType (e : ExtendedInd) (indFVar : Expr) (
       name := ctor.name.replacePrefix ctor.induct .anonymous
       type := ctorType : Constructor
     }
+  let ctors ← mergeCtorList oldCtors inheritedCtors
   return { name := e.newIndName
            type := e.type
-           ctors := oldCtors ++ inheritedCtors}
+           ctors}
 
 def IndExtension.AddCtors.modifyInductiveType (e : ExtendedInd) (oldCtors : List Constructor) (addCtors : AddCtors): ModularM InductiveType := do
+  let newCtors := addCtors.addedCtors.toList
+  let ctors ← mergeCtorList oldCtors newCtors
   return { name := e.newIndName
            type := e.type
-           ctors := oldCtors ++ addCtors.addedCtors.toList}
+           ctors}
 
 def IndExtension.modifyInductiveType (e : ExtendedInd) (indFVar : Expr) (tempIndExt : ModularExtension) (oldCtors : List Constructor) : IndExtension → ModularM InductiveType
   | .addCtors a => a.modifyInductiveType e oldCtors

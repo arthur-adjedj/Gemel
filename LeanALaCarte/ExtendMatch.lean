@@ -1,11 +1,15 @@
 module
 
 public import LeanALaCarte.ModMap
+public import LeanALaCarte.MergeModMaps
 import all Lean.Elab.Match
 
 public meta section
 
 open Lean Elab Term Meta Match
+
+instance : ToMessageData Pattern where
+  toMessageData := Pattern.toMessageData
 
 structure MatcherBundle where
   lctx : LocalContext
@@ -115,8 +119,8 @@ def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) 
       i := i + 1
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr :=
-  withTraceNode `Modular.Elab (fun | .ok _ => return "Generating matcher from matcher bundle and added alts"
-                                   | .error e => return m!"Generating matcher from matcher bundle and added alts {e.toMessageData}") do
+  withTraceNode `Modular.Match (fun | .ok _ => return "Generating matcher from matcher bundle and added alts"
+                                    | .error e => return m!"Generating matcher from matcher bundle and added alts {e.toMessageData}") do
   let {lctx, discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
   withLCtx' lctx do
   unless oldlhss.length == oldrhss.size do
@@ -215,9 +219,45 @@ def _root_.Lean.LocalContext.toMessageData (lctx : LocalContext) : MessageData :
     -- let mvar ← mkFreshExprMVar none
     -- return m!"{mvar.mvarId!}"
 
-def mergeMatcherBundles (ms : Array MatcherBundle) : TermElabM MatcherBundle :=
-  withTraceNode `Modular.Elab (fun | .ok _ => return m!"Merging matcherBundles"
-                                   | .error e => return m!"Merging matcherBundles : {e.toMessageData}") do
+deriving instance BEq for Pattern
+
+def mergeBranches (oldlhss newlhss : Array AltLHS) (oldrhss newrhss : Array Expr) : ModularM (Array AltLHS × Array Expr) := do
+  assert! oldlhss.size = oldrhss.size && newlhss.size = newrhss.size
+  let mut lhss := oldlhss
+  let mut rhss := oldrhss
+  for i in [:newlhss.size] do
+    let newlhs := newlhss[i]!
+    let mut isRedundantBranch := false
+    let newlhspatternExprs ← newlhss[i]!.patterns.mapM fun p =>  Pattern.toExpr p
+    for j in [:oldlhss.size] do
+      let oldlhs := oldlhss[j]!
+      unless oldlhs.fvarDecls.length == newlhs.fvarDecls.length do
+        break
+      -- This reads so much like OCaml, I hate it.
+      -- TODO define and use List.foldl₂ here instead
+      let subst := oldlhs.fvarDecls.foldl (init := (newlhs.fvarDecls,FVarSubst.empty)) (fun
+        | ([],_), _ => unreachable!
+        | (newlcdl::tl,subst), oldlcdl => (tl, subst.insert oldlcdl.fvarId (Expr.fvar newlcdl.fvarId)))
+        |>.2
+      -- TODO this is probably too strict an equality, what if i.e one side has inaccessible terms/named patterns and the other doesn't ?
+      let oldp ←  oldlhs.patterns.mapM (Pattern.toExpr $ Pattern.applyFVarSubst subst ·)
+      trace[Modular.Match] "Comparing patterns {oldp} and {newlhspatternExprs}"
+      unless oldp == newlhspatternExprs do
+        break
+      trace[Modular.Match] "They're the same thing !"
+      let newrhs := newrhss[i]!
+      let oldrhs := oldrhss[i]!
+      let rhs ← mergeExprs #[oldrhs,newrhs]
+      rhss := rhss.set! i rhs
+      isRedundantBranch := true
+    unless isRedundantBranch do
+      lhss := lhss.push newlhs
+      rhss := rhss.push newrhss[i]!
+  return (lhss,rhss)
+
+def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
+  withTraceNode `Modular.Match (fun | .ok _ => return m!"Merging matcherBundles"
+                                    | .error e => return m!"Merging matcherBundles : {e.toMessageData}") do
   if _ : ms.size = 0 then
     throwError "Unexpected: empty array of matcher bundles"
   else if _ : ms.size = 1 then
@@ -236,8 +276,11 @@ def mergeMatcherBundles (ms : Array MatcherBundle) : TermElabM MatcherBundle :=
       -- unless res.matchType.abstract res.lctx.getFVars == matchType.abstract lctx.getFVars do
         -- throwError "Unable to merge matches: match types {res.matchType} and {matchType} are not defeq."
       -- the merging of lhss/rhss is naive and doesn't allow for diamonds here
-      -- TODO do better
-      res := {res with lhss := res.lhss ++ lhss, rhss := res.rhss ++ rhss}
+
+      -- TODO this translation back and forth of the lhss between List and Array is unpleasant, but makes `mergebranches` easier to write...
+      -- Such lists are also usually very short, so it should be okay. Lots of room for optimisation in that function generally if it isn't.
+      let (lhss,rhss) ← mergeBranches res.lhss.toArray lhss.toArray res.rhss rhss
+      res := {res with lhss := lhss.toList, rhss}
     return res
 
 def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
@@ -249,35 +292,35 @@ def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToEx
   -- We consider the first matcher in the array to be "canonical", in that its name will be used
   let {matchName, mvar := matchmvar, originalLCtx,..} := matchExt[0]!
   unless mvar == matchmvar do
-    throwError "ohno"
-  trace[Modular.Elab] "Elaborating matcher : {name} {Expr.mvar mvar}"
+    throwError "Internal error: expected matcher to have mvar {Expr.mvar mvar} ({Expr.mvar <| ← getDelayedMVarRoot mvar}), found {Expr.mvar matchmvar} ({Expr.mvar <| ← getDelayedMVarRoot matchmvar}) instead (All matchers' mvars : {matchExt.map (Expr.mvar ·.mvar)})"
+  trace[Modular.Match] "Elaborating matcher : {name} {Expr.mvar mvar}"
   let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
   unless Name.mkSimple matchName = name do
     throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
   let mut matcherBundles := #[]
-  withTraceNode `Modular.Elab (fun _ => return "Generating Matcher bundles") do←
+  withTraceNode `Modular.Match (fun _ => return "Generating Matcher bundles") do←
     for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExt do
       let mvarDecl ← matchmvar.getDecl
       withSetModMappedLCtx mvarDecl.lctx do←
       withLCtx' originalLCtx do←
-        trace[Modular.Elab] "originalMatch : {originalMatch}"
-        trace[Modular.Elab] "modMappedRhss : {modMappedRhss}"
+        trace[Modular.Match] "originalMatch : {originalMatch}"
+        trace[Modular.Match] "modMappedRhss : {modMappedRhss}"
         let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-        trace[Modular.Elab] "matcherBundle generated"
+        trace[Modular.Match] "matcherBundle generated"
         let matcherBundle ←
-          withTraceNode `Modular.Elab (fun _ => return "Modmapping matcherBundle") do
+          withTraceNode `Modular.Match (fun _ => return "Modmapping matcherBundle") do
             matcherBundle.modMap modMappedRhss
-        trace[Modular.Elab] "matcherBundle modmapped"
-        trace[Modular.Elab] "patterns : {alts.map (·.patterns)}"
+        trace[Modular.Match] "matcherBundle modmapped"
+        trace[Modular.Match] "patterns : {alts.map (·.patterns)}"
         matcherBundles := matcherBundles.push matcherBundle
   let mvarDecl ← mvar.getDecl
   withSetModMappedLCtx mvarDecl.lctx do
   withModMappedLCtx do
   withArgNames argNames do
-  Term.withDeclName newFunName do
     let m ← mergeMatcherBundles matcherBundles
-    let newMatcherExpr ← MatcherBundle.mkMatcher m alts
-    mvar.assign newMatcherExpr
+    Term.withDeclName newFunName do
+      let newMatcherExpr ← MatcherBundle.mkMatcher m alts
+      mvar.assign newMatcherExpr
 
 def elabModMatchNoClauses (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
   unless matchExt.size != 0 do

@@ -24,6 +24,7 @@ structure AddCtors where
   addedCtors : Array Constructor
 
 inductive _root_.IndExtension where
+  -- TODO we shouldn't have `addCtors`, this should instead be encoded as a separate inductive type in the future
   | addCtors : AddCtors → IndExtension
   | addInd : AddInd → IndExtension
   -- should composition be primitive to IndExtensions ?

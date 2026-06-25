@@ -50,8 +50,8 @@ def Ren.drop (A) (R : Ren Γ Δ): Ren (A::Γ) Δ := fun _ h => .tail (R _ h)
 
 def Ren.wk (A) : Ren (A::Γ) Γ := Ren.drop _ .id
 
-def Var.wk (R : Ren Γ Δ) : Var Δ B → Var Γ B
-  | var h => .var (R _ h)
+def Var.wk (R : Ren Γ Δ): {B : Ty} → Var Δ B → Var Γ B
+  | _,var h => .var (R _ h)
 
 theorem Var.wk_comp (R₁ : Ren Γ₁ Γ₂) (R₂ : Ren Γ₂ Γ₃) : Var.wk R₁ (Var.wk R₂ t) = Var.wk (R₁ ∘ᵣ R₂) t := by
   induction t generalizing Γ₁ Γ₂
@@ -78,152 +78,158 @@ theorem Var.wk_subst :
 
 inductive Var.Step : Var Γ A → Var Γ A → Prop where
 
+inductive NatTy where
+  | dummy2
+  | nat
+
+inductive NatExt : List NatTy → NatTy → Type where
+  | const : Nat → NatExt Γ .nat
+  | plus : NatExt Γ .nat → NatExt Γ .nat → NatExt Γ .nat
+
+def NatExt.wk (R : Ren Γ Δ) : {B : NatTy} → NatExt Δ B → NatExt Γ B
+  | _,.const a => .const a
+  | _,.plus a b => .plus (NatExt.wk R a) (NatExt.wk R b)
+
+theorem NatExt.wk_comp (R₁ : Ren Γ₁ Γ₂) (R₂ : Ren Γ₂ Γ₃) : NatExt.wk R₁ (NatExt.wk R₂ t) = NatExt.wk (R₁ ∘ᵣ R₂) t := by
+  induction t generalizing Γ₁ Γ₂ <;> simp [NatExt.wk, *]
+
 modular
-  inductive NatTy extends Ty where
-    | nat
+  inductive VarNatTy extends Ty, NatTy where
 
-  inductive NatExt extends Var where
-    | const : Nat → NatExt Γ .nat
-    | plus : NatExt Γ .nat → NatExt Γ .nat → NatExt Γ .nat
+  inductive VarNatExt extends Var,NatExt where
 
-  mod def NatExt.wk extends Var.wk where
-    matcher match_1 R with
-      | .const a => .const a
-      | .plus a b => .plus (NatExt.wk R a) (NatExt.wk R b)
+  mod def VarNatExt.wk extends Var.wk, NatExt.wk where
 
-  mod def NatExt.wk_comp extends Var.wk_comp where
-    finally
-      · intros
-        simp only [NatExt.wk]
-      · intro _ _ _ a_ih b_ih _ _ _ _
-        simp [NatExt.wk,a_ih,b_ih]
+  mod def VarNatExt.wk_comp extends Var.wk_comp, NatExt.wk_comp
 
-  mod def NatExt.Subst extends Var.Subst
+  mod def VarNatExt.Subst extends Var.Subst
 
-  mod def NatExt.subst extends Var.subst where
+  mod def VarNatExt.Subst.id extends Var.Subst.id
+
+  mod def VarNatExt.subst extends Var.subst where
     matcher match_1 s with
       | .const a => .const a
-      | .plus a b => .plus (NatExt.subst s a) (NatExt.subst s b)
+      | .plus a b => .plus (.subst s a) (.subst s b)
 
-  mod def NatExt.Subst.id extends Var.Subst.id
-  mod def NatExt.Subst.comp extends Var.Subst.comp
-
-  mod def NatExt.subst_id extends Var.subst_id where
-    finally
-      · intros; rfl
-      · intro Γ a b a_ih b_ih
-        rw [NatExt.subst,a_ih,b_ih]
-
-  mod def NatExt.wk_subst extends Var.wk_subst where
-    finally
-      · intros
-        rfl
-      · intros Γ a b a_ih b_ih s
-        simp [NatExt.subst,NatExt.wk,a_ih,b_ih]
-
-  inductive NatExt.Step extends Var.Step where
-    | plus_const : NatExt.Step (.plus (.const a) (.const b)) (.const (a + b))
-    | plus_lhs : NatExt.Step a₁ a₂ → NatExt.Step (.plus a₁ b) (.plus a₂ b)
-    | plus_rhs : NatExt.Step b₁ b₂ → NatExt.Step (.plus a b₁) (.plus a b₂)
-
-modular
-  inductive LamTy extends NatTy where
-    | arr : LamTy → LamTy → LamTy
-
-  inductive Term extends NatExt where
-    | lam : Term (A::Γ) B → Term Γ (.arr A B)
-    | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
-
-  mod def Term.wk extends NatExt.wk where
-    matcher match_1 with
-      | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
-      | _, .app a b => .app (Term.wk R a) (Term.wk R b)
-
-  mod def Term.wk_comp extends NatExt.wk_comp where
-    finally
-    · intro _ _ _ _ a_ih _ _ _ _
-      simp only [Term.wk,a_ih,Ren.ext_comp_ext]
-    · intros
-      clear Term.wk_comp
-      simp only [Term.wk, *]
-
-  mod def Term.Subst extends NatExt.Subst
-  mod def Term.Subst.id extends NatExt.Subst.id
-
-  theorem Term.wk_id {Γ : List LamTy} {h : Γ.Has A} : Term.wk (Ren.wk B) (Subst.id A h) = (Subst.id A h.tail) := rfl
-
-  def Term.subst_ext (s : Term.Subst Γ Δ) A : Term.Subst (A::Γ) (A::Δ)
-    | _ ,.head => .var .head
-    | _ ,.tail h => Term.wk (Ren.wk _) (s h)
-
-  theorem Term.subst_ext_id : @Term.subst_ext Γ Γ Term.Subst.id A = Term.Subst.id := by
-    funext _ h
-    cases h
-    · rfl
-    · rw [subst_ext]
-      rfl
-
-  def Term.subst_wk (a : Term Γ A) : Term.Subst Γ (A::Γ)
-    | _,.head => a
-    | _,.tail h => .var h
-
-  mod def Term.subst extends NatExt.subst where
-    matcher match_1 with
-      | _, .lam f => .lam (Term.subst (Term.subst_ext s _) f)
-      | _, .app a b => .app (Term.subst s a) (Term.subst s b)
-
-  mod def Term.Subst.comp extends NatExt.Subst.comp
-
-  infixr:90 " ∘ₛₜ " => Term.Subst.comp
-
-  mod def Term.subst_id extends NatExt.subst_id where
-    finally
-      · intro _ _ _ a a_ih
-        rw [Term.subst, Term.subst_ext_id,a_ih]
-      · intro _ _ _ a b a_ih b_ih
-        rw [Term.subst,a_ih,b_ih]
-
-  inductive Term.Step extends NatExt.Step where
-    | beta : Term.Step (.app (.lam f) x) (Term.subst (Term.subst_wk x) f)
-    | lam : Term.Step f₁ f₂ → Term.Step (.lam f₁) (.lam f₂)
-    | app_lhs : Term.Step f₁ f₂ → Term.Step (.app f₁ x) (.app f₂ x)
-    | app_rhs : Term.Step x₁ x₂ → Term.Step (.app f x₁) (.app f x₂)
-
-  local infixr:75 " ⤳ " => Term.Step
-  local infixr:75 " ⤳⋆ " => RTC Term.Step
-
-  mod def Term.wk_subst extends NatExt.wk_subst where
-    finally
-    · intro A Γ B f f_ih R s _ _
-      simp [Term.subst,Term.wk,f_ih]
-      congr
-      funext x h
-      cases h
-      · rfl
-      · simp only [Term.subst_ext,Term.wk_comp]
-        rfl
-    · intro A Γ B f x ihf ihx
-      simp [Term.subst, Term.wk, ihf, ihx]
-
-  theorem Term.subst_ext_comp {Γ₁ Γ₂ Γ₃} (s₁ : Term.Subst Γ₁ Γ₂) (s₂ : Term.Subst Γ₂ Γ₃)
-    : Subst.comp (Term.subst_ext s₁ A) (Term.subst_ext s₂ A) = Term.subst_ext (s₁.comp s₂) A := by
-      funext _ h
-      cases h
-      · rfl
-      · simp [Subst.comp,subst_ext,wk_subst]
-        sorry
-
-  theorem Term.subst_comp {Γ Δ Ξ : List LamTy} :
-    ∀ {A} (t : Term Ξ A), ∀ (s₁ : Subst Γ Δ) (s₂ : Subst Δ Ξ),
-    subst s₁ (subst s₂ t) = subst (s₁.comp s₂) t := by
-      intro A t
-      induction t generalizing Γ Δ <;> intro s₁ s₂ <;> try rfl
-      case plus _ a b a_ih b_ih =>
-        simp [subst,a_ih,b_ih]
-      case lam _ _ a a_ih =>
-        rw [subst,subst,subst,a_ih,subst_ext_comp]
-      case app _ _ _ a b a_ih b_ih =>
-        simp [subst, a_ih,b_ih]
-
-
-  theorem Term.Step.Confluent : Confluent (@Term.Step Γ A) := sorry
+  mod def VarNatExt.Subst.comp extends Var.Subst.comp
+--
+  -- mod def NatExt.subst_id extends Var.subst_id where
+    -- finally
+      -- · intros; rfl
+      -- · intro Γ a b a_ih b_ih
+        -- rw [NatExt.subst,a_ih,b_ih]
+--
+  -- mod def NatExt.wk_subst extends Var.wk_subst where
+    -- finally
+      -- · intros
+        -- rfl
+      -- · intros Γ a b a_ih b_ih s
+        -- simp [NatExt.subst,NatExt.wk,a_ih,b_ih]
+--
+  -- inductive NatExt.Step extends Var.Step where
+    -- | plus_const : NatExt.Step (.plus (.const a) (.const b)) (.const (a + b))
+    -- | plus_lhs : NatExt.Step a₁ a₂ → NatExt.Step (.plus a₁ b) (.plus a₂ b)
+    -- | plus_rhs : NatExt.Step b₁ b₂ → NatExt.Step (.plus a b₁) (.plus a b₂)
+--
+-- modular
+  -- inductive LamTy extends NatTy where
+    -- | arr : LamTy → LamTy → LamTy
+--
+  -- inductive Term extends NatExt where
+    -- | lam : Term (A::Γ) B → Term Γ (.arr A B)
+    -- | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
+--
+  -- mod def Term.wk extends NatExt.wk where
+    -- matcher match_1 with
+      -- | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
+      -- | _, .app a b => .app (Term.wk R a) (Term.wk R b)
+--
+  -- mod def Term.wk_comp extends NatExt.wk_comp where
+    -- finally
+    -- · intro _ _ _ _ a_ih _ _ _ _
+      -- simp only [Term.wk,a_ih,Ren.ext_comp_ext]
+    -- · intros
+      -- clear Term.wk_comp
+      -- simp only [Term.wk, *]
+--
+  -- mod def Term.Subst extends NatExt.Subst
+  -- mod def Term.Subst.id extends NatExt.Subst.id
+--
+  -- theorem Term.wk_id {Γ : List LamTy} {h : Γ.Has A} : Term.wk (Ren.wk B) (Subst.id A h) = (Subst.id A h.tail) := rfl
+--
+  -- def Term.subst_ext (s : Term.Subst Γ Δ) A : Term.Subst (A::Γ) (A::Δ)
+    -- | _ ,.head => .var .head
+    -- | _ ,.tail h => Term.wk (Ren.wk _) (s h)
+--
+  -- theorem Term.subst_ext_id : @Term.subst_ext Γ Γ Term.Subst.id A = Term.Subst.id := by
+    -- funext _ h
+    -- cases h
+    -- · rfl
+    -- · rw [subst_ext]
+      -- rfl
+--
+  -- def Term.subst_wk (a : Term Γ A) : Term.Subst Γ (A::Γ)
+    -- | _,.head => a
+    -- | _,.tail h => .var h
+--
+  -- mod def Term.subst extends NatExt.subst where
+    -- matcher match_1 with
+      -- | _, .lam f => .lam (Term.subst (Term.subst_ext s _) f)
+      -- | _, .app a b => .app (Term.subst s a) (Term.subst s b)
+--
+  -- mod def Term.Subst.comp extends NatExt.Subst.comp
+--
+  -- infixr:90 " ∘ₛₜ " => Term.Subst.comp
+--
+  -- mod def Term.subst_id extends NatExt.subst_id where
+    -- finally
+      -- · intro _ _ _ a a_ih
+        -- rw [Term.subst, Term.subst_ext_id,a_ih]
+      -- · intro _ _ _ a b a_ih b_ih
+        -- rw [Term.subst,a_ih,b_ih]
+--
+  -- inductive Term.Step extends NatExt.Step where
+    -- | beta : Term.Step (.app (.lam f) x) (Term.subst (Term.subst_wk x) f)
+    -- | lam : Term.Step f₁ f₂ → Term.Step (.lam f₁) (.lam f₂)
+    -- | app_lhs : Term.Step f₁ f₂ → Term.Step (.app f₁ x) (.app f₂ x)
+    -- | app_rhs : Term.Step x₁ x₂ → Term.Step (.app f x₁) (.app f x₂)
+--
+  -- local infixr:75 " ⤳ " => Term.Step
+  -- local infixr:75 " ⤳⋆ " => RTC Term.Step
+--
+  -- mod def Term.wk_subst extends NatExt.wk_subst where
+    -- finally
+    -- · intro A Γ B f f_ih R s _ _
+      -- simp [Term.subst,Term.wk,f_ih]
+      -- congr
+      -- funext x h
+      -- cases h
+      -- · rfl
+      -- · simp only [Term.subst_ext,Term.wk_comp]
+        -- rfl
+    -- · intro A Γ B f x ihf ihx
+      -- simp [Term.subst, Term.wk, ihf, ihx]
+--
+  -- theorem Term.subst_ext_comp {Γ₁ Γ₂ Γ₃} (s₁ : Term.Subst Γ₁ Γ₂) (s₂ : Term.Subst Γ₂ Γ₃)
+    -- : Subst.comp (Term.subst_ext s₁ A) (Term.subst_ext s₂ A) = Term.subst_ext (s₁.comp s₂) A := by
+      -- funext _ h
+      -- cases h
+      -- · rfl
+      -- · simp [Subst.comp,subst_ext,wk_subst]
+        -- sorry
+--
+  -- theorem Term.subst_comp {Γ Δ Ξ : List LamTy} :
+    -- ∀ {A} (t : Term Ξ A), ∀ (s₁ : Subst Γ Δ) (s₂ : Subst Δ Ξ),
+    -- subst s₁ (subst s₂ t) = subst (s₁.comp s₂) t := by
+      -- intro A t
+      -- induction t generalizing Γ Δ <;> intro s₁ s₂ <;> try rfl
+      -- case plus _ a b a_ih b_ih =>
+        -- simp [subst,a_ih,b_ih]
+      -- case lam _ _ a a_ih =>
+        -- rw [subst,subst,subst,a_ih,subst_ext_comp]
+      -- case app _ _ _ a b a_ih b_ih =>
+        -- simp [subst, a_ih,b_ih]
+--
+--
+  -- theorem Term.Step.Confluent : Confluent (@Term.Step Γ A) := sorry
+--

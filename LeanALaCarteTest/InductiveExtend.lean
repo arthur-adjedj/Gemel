@@ -144,7 +144,7 @@ inductive Var : (Γ : Env) → Ty → Type
 
 def Ren (Γ Δ : Env) := ∀ A, A ∈ Γ → A ∈ Δ
 
-def Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
+theorem Ren.ext (R : Ren Γ Δ) A: Ren (A::Γ) (A::Δ)
   | _,.head _ => .head _
   | _,.tail _ h => .tail _ (R _ h)
 
