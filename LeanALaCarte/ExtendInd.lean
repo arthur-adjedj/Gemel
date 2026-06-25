@@ -272,21 +272,38 @@ def mkAuxMappings (mkAuxName : List (Name → Name)) (oldName newName : Name) : 
 
 def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let oldRecVal ← getConstInfoRec oldRecName
+  let {ctors := oldIndCtors,..} ← getConstInfoInduct oldRecVal.getMajorInduct
+  let oldIndCtors := oldIndCtors.map fun | (.str _ a) => a | _ => unreachable!
   let newRecVal ← getConstInfoRec newRecName
-  let numParams := oldRecVal.numParams
-  assert! numParams = newRecVal.numParams
+  let {ctors := newIndCtors,..} ← getConstInfoInduct newRecVal.getMajorInduct
+  let newIndCtors := newIndCtors.map fun | (.str _ a) => a | _ => unreachable!
+  let oldIndIdxs := oldIndCtors.map fun ctorName => newIndCtors.findIdx (ctorName == ·)
+  assert! oldRecVal.numParams = newRecVal.numParams
   let numOldMotives := oldRecVal.numMotives
   let numOldMinors := oldRecVal.numMinors
   let numNewMotives := newRecVal.numMotives - numOldMotives
   assert! numNewMotives = 0 -- We don't support extending a non-nested type into a nested one for now
   let numNewMinors := newRecVal.numMinors - numOldMinors
-  let numArgs := numParams + numOldMotives + numOldMinors
+  let numArgs := oldRecVal.numParams + numOldMotives + numOldMinors
   let numHoles := numNewMotives + numNewMinors
-  let mut recArgs : Array Expr := #[]
-  for i in [:numArgs] do
-    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
-  for i in [:numHoles] do
-    recArgs := recArgs.push (mkBVar (numArgs + numHoles - i - 1))
+  trace[Modular.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
+  let mut recArgs? := Array.replicate (numArgs + numHoles) none
+  for i in [:oldRecVal.numParams + numOldMotives] do
+    recArgs? := recArgs?.set! i (some (mkBVar (numArgs - i - 1)))
+  trace[Modular.Elab] "recArgs after adding motives : {recArgs?}"
+  for i in [:oldIndIdxs.length] do
+    let idx := oldRecVal.numParams + numOldMotives + oldIndIdxs[i]!
+    recArgs? := recArgs?.set! idx (some (mkBVar (numArgs - oldRecVal.numParams - numOldMotives - i - 1)))
+  trace[Modular.Elab] "recArgs after adding minors : {recArgs?}"
+  let mut nextHoleNum := numArgs + numHoles - 1
+  for i in [:recArgs?.size] do
+    if recArgs?[i]!.isNone then
+      recArgs? := recArgs?.set! i (some (mkBVar nextHoleNum))
+      nextHoleNum := nextHoleNum - 1
+  trace[Modular.Elab] "recArgs after adding holes : {recArgs?}"
+  unless nextHoleNum + 1 == numArgs do
+    throwError "Internal bug: nextHoleNum ({nextHoleNum + 1}) != numArgs {numArgs}"
+  let recArgs := recArgs?.map Option.get!
   let recExtExpr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
   let recExt : ModularExtension := {
     expr := recExtExpr
@@ -296,37 +313,6 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   }
   trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecVal.name recExt)
-
-/- Similar to `mkRecMapping`, except the minors map to the last minors, not the first-/
-def mkAddIndRecMapping (oldRecName newRecName : Name): ModularM Unit := do
-  let oldRecVal ← getConstInfoRec oldRecName
-  let newRecVal ← getConstInfoRec newRecName
-  let numParams := oldRecVal.numParams
-  assert! numParams = newRecVal.numParams
-  let numOldMotives := oldRecVal.numMotives
-  let numOldMinors := oldRecVal.numMinors
-  let numNewMotives := newRecVal.numMotives - numOldMotives
-  assert! numNewMotives = 0 -- We don't support extending a non-nested type into a nested one for now
-  let numNewMinors := newRecVal.numMinors - numOldMinors
-  let numArgs := numParams + numOldMotives + numOldMinors
-  let numHoles := numNewMotives + numNewMinors
-  let mut recArgs : Array Expr := #[]
-  for i in [:numOldMotives] do
-    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
-  for i in [:numHoles] do
-    recArgs := recArgs.push (mkBVar (numArgs + numHoles - i - 1))
-  for i in [numOldMotives:numArgs] do
-    recArgs := recArgs.push (mkBVar (numArgs - i - 1))
-  let recExtExpr := mkAppN (mkConst newRecVal.name (oldRecVal.levelParams.map .param)) recArgs
-  let recExt : ModularExtension := {
-    expr := recExtExpr
-    levelParams := oldRecVal.levelParams
-    numArgs
-    numHoles
-  }
-  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
-  modifyMap (·.insert oldRecVal.name recExt)
-
 
 def addCtorsMappings (oldIndName : Name) (extendedInductive : ExtendedInd)  : ModularM Unit := do
   let newIndName := extendedInductive.newIndName
@@ -353,7 +339,7 @@ def IndExtension.AddInd.addMappings (extendedInductive : ExtendedInd) (a : AddIn
   addCtorsMappings oldIndName extendedInductive
   let newRecName := mkRecName newIndName
   let oldRecName := mkRecName oldIndName
-  mkAddIndRecMapping oldRecName newRecName
+  mkRecMapping oldRecName newRecName
   -- TODO `rec_on` is currently no handled correctly
   let mkAuxNames := [mkRecOnName, mkCasesOnName, mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
   mkAuxMappings mkAuxNames oldIndName newIndName
