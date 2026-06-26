@@ -10,7 +10,9 @@ theorem A.sizeOf_eq : A.sizeOf = A.sizeOf := by
   funext x
   induction x <;> congr
 
-set_option trace.Modular true in
+def A.diag : A → A → Prop
+  | .a x, .a y => x.diag y
+
 modular (name := `B)
   inductive B extends A where
     | b : B
@@ -22,6 +24,12 @@ modular (name := `B)
   mod def B.sizeOf_eq extends A.sizeOf_eq where
     finally
       rfl
+
+  mod def B.diag extends A.diag where
+    matcher match_1 with
+      | .b, .b => True
+      | .a _,.b => False
+      | .b, .a _ => False
 
 modular (name := `C)
   inductive C extends A where
@@ -35,7 +43,12 @@ modular (name := `C)
     finally
       intros; congr
 
-set_option trace.Modular true
+  mod def C.diag extends A.diag where
+    matcher match_1 with
+      | .c x₁ y₁, .c x₂ y₂ => x₁.diag x₂ ∧ y₁.diag y₂
+      | .a _, .c .. => False
+      | .c ..,.a _ => False
+
 modular (imports := #[`B,`C])
 
   inductive D extends B,C where
@@ -43,3 +56,7 @@ modular (imports := #[`B,`C])
   mod def D.sizeOf extends B.sizeOf, C.sizeOf
 
   mod def D.sizeOf_eq extends B.sizeOf_eq, C.sizeOf_eq
+
+  mod def D.diag extends B.diag, C.diag where
+    matcher match_1 with
+      | _,_ => False
