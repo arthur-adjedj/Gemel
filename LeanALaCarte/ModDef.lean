@@ -3,6 +3,7 @@ module
 public meta import Lean.Elab.PreDefinition.Main
 public meta import LeanALaCarte.CollectAuxDefs
 public meta import Lean.Meta.Tactic.Try.Collect
+public import LeanALaCarte.Util
 public import LeanALaCarte.AuxMapping
 public import LeanALaCarte.ExtendMatch
 public import LeanALaCarte.MergeModMaps
@@ -196,6 +197,7 @@ meta def elabModDef : ModularElab := fun stx =>
         "Functions getting extended do not all have the same universe level parameters" --TODO more accurate error message
     let expandedDeclId ← Term.expandDeclId (← getCurrNamespace) oldFunCInfos[0]!.levelParams newFunStx modifiers
     let newFunName := expandedDeclId.declName
+    Lean.Elab.Term.withDeclName' newFunName do
     checkNotAlreadyDeclared newFunName
     let newShortName := expandedDeclId.shortName
     let extraMapNames ← oldFunNames.flatMapM fun oldFunName => do
@@ -260,7 +262,7 @@ meta def elabModDef : ModularElab := fun stx =>
         else
           let some (some tac) := tacs
             | throwError "Missing `where ... finally` block to solve the missing holes"
-          Term.withDeclName newFunName do solveGoalsWithTactic tac mvars
+          solveGoalsWithTactic tac mvars
         trace[Modular.Elab] "Tactics elaborated"
         mappedValues.forM fun e => Meta.check e
         Term.synthesizeSyntheticMVarsNoPostponing

@@ -318,9 +318,8 @@ def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToEx
   withModMappedLCtx do
   withArgNames argNames do
     let m ← mergeMatcherBundles matcherBundles
-    Term.withDeclName newFunName do
-      let newMatcherExpr ← MatcherBundle.mkMatcher m alts
-      mvar.assign newMatcherExpr
+    let newMatcherExpr ← MatcherBundle.mkMatcher m alts
+    mvar.assign newMatcherExpr
 
 def elabModMatchNoClauses (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
   unless matchExt.size != 0 do
