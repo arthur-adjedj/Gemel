@@ -3,6 +3,7 @@ module
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
 public meta import Lean.Elab.Tactic.Config
+public meta import Lean.EnvExtension
 import Lean.Elab.Tactic.Config
 public section
 
@@ -61,9 +62,10 @@ structure MatchToExtend where
   modMappedRhss : Array Expr
 deriving Inhabited
 
-structure ModularElabState where
+meta structure ModularElabState where
   map : ModularMap := {}
   indFunctors : NameMap IndExtension := {}
+deriving Inhabited
 
 structure ModularState extends ModularElabState where
   matchesToExtend : Std.HashMap MVarId (Array MatchToExtend) := {}
@@ -307,12 +309,23 @@ declare_command_config_elab elabModularSetup ModularSetup
 
 syntax (name := modular_block) "modular" Parser.Tactic.optConfig manyIndent(modular_command) : command
 
-initialize modStates : IO.Ref (Std.HashMap Name ModularElabState) ← IO.mkRef {}
+initialize modStates : MapDeclarationExtension ModularElabState ←
+  mkMapDeclarationExtension (asyncMode := .sync)
+
+def mkDummyDecl (name : Name) : CoreM Unit :=
+  addDecl (.defnDecl { name
+                       levelParams := []
+                       type := .sort 1
+                       value := .sort 0
+                       hints := default
+                       safety := default })
 
 @[command_elab modular_block, incremental]
 def elabModularBlock : CommandElab := fun stx => do
   match stx with
   | `(command| modular $cfg:optConfig $[$m]* ) => do
+    withExporting do
+    trace[Modular.Elab] s!"{modStates.getState (← getEnv) |>.keys}"
     let cfg ← elabModularSetup cfg
     if let some snap := (← read).snap? then
       let oldSnap? := do
@@ -323,7 +336,7 @@ def elabModularBlock : CommandElab := fun stx => do
       let opts ← getOptions
       let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modst := (← modStates.get)[name]?
+        let some modst := modStates.find? (← getEnv) name
           | throwError "Failed to import modular mapping {name}."
         st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let mut outputs : Array (Command.State × ModularElabState) := #[]
@@ -356,17 +369,21 @@ def elabModularBlock : CommandElab := fun stx => do
         outputs
         : ModularBlockSnapshot
       }
-      if !cfg.name.isAnonymous then
-        modStates.modify (Std.HashMap.insert · cfg.name st)
+      unless cfg.name.isAnonymous do
+        let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
+        liftTermElabM <| mkDummyDecl name
+        modifyEnv fun env => modStates.insert env name st
     else
       let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modst := (← modStates.get)[name]?
+        let some modst := modStates.find? (← getEnv) name
           | throwError "Failed to import modular mapping {name}."
         st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
-      if !cfg.name.isAnonymous then
-        modStates.modify (Std.HashMap.insert · cfg.name endMap)
+      unless cfg.name.isAnonymous do
+        let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
+        liftTermElabM <| mkDummyDecl name --for some reason, this is necessary...
+        modifyEnv fun env => modStates.insert env name endMap
   | _ => throwUnsupportedSyntax
 
 initialize
