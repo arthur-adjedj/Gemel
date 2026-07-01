@@ -205,7 +205,7 @@ meta def elabModDef : ModularElab := fun stx =>
         return (← auxDefs oldFunName) |>.map (oldFunName, ·) |>.toArray
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
     let mut mapHeaders := #[]
-    for (oldFunName,oldAuxName) in extraMapNames do
+    for (oldFunName, oldAuxName) in extraMapNames do
       let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
       -- We don't attempt to merge auxiliary defs for now, it might make sense to try to later
       mapHeaders := mapHeaders.push (← mkMappedDecl #[oldAuxName] newAuxName)
@@ -254,7 +254,7 @@ meta def elabModDef : ModularElab := fun stx =>
         let mvars ← mvars.filterM (notM ·.isAssigned)
         trace[Modular.Elab] "Mvars filtered : {mvars.map Expr.mvar}"
 
-        if mvars.isEmpty  then
+        if mvars.isEmpty then
           if let some (some tac) := tacs then
             throwErrorAt tac "Unexpected tactic block: the translation generated no obligations"
         else
@@ -275,6 +275,7 @@ meta def elabModDef : ModularElab := fun stx =>
         addConstInfo newFunStx newFunName mainDeclHeader.type
     -- All is done, we can leave the `withMappedHeadersDecls` and `withSetMap` scopes and add the correct mappings to the environment
     for {cinfos, newName, ..} in mapHeaders do
+      addDeclarationRangesFromSyntax newName stx
       let newMapEntry := {
         expr := mkConst newName (cinfos[0]!.levelParams.map Level.param)
         levelParams := cinfos[0]!.levelParams
@@ -284,5 +285,4 @@ meta def elabModDef : ModularElab := fun stx =>
         addMapEntry cinfo.name newMapEntry
         addUnfoldEqMapping cinfo.name newName
         addEqnMappings cinfo.name newName
-        addDeclarationRangesFromSyntax cinfo.name stx
   | _ => throwUnsupportedSyntax

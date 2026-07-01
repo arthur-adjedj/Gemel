@@ -24,7 +24,7 @@ partial def collectAuxDefs (cname : Name) (root : Name := cname): StateRefT S Me
   -- modify fun map => if map.contains cname then map else map.insert cname {}
   let cinfo ← getConstInfo cname
   let names := cinfo.getUsedConstantsAsSet
-  trace[Modular.Elab] "collectAuxDefs {cname} (root: {root}): {names.toArray}"
+  -- trace[Modular.Elab] "collectAuxDefs {cname} (root: {root}): {names.toArray}"
   for name in names do
     -- matchers get abstracted away, so we shouldn't add them as functions to be translated
     unless name.isAuxDeclOf root && !name.isMatcher do
@@ -61,7 +61,7 @@ def auxDefs (n : Name) : MetaM (List Name) := do
 
 partial def Lean.Expr.collectAuxDefs (cname : Name) (e : Expr) (root : Name := cname) : StateRefT S MetaM Unit := do
   let names := e.foldConsts (init := {}) (flip NameSet.insert)
-  trace[Modular.Elab] "Expr.collectAuxDefs {e} (root: {root}): {names.toArray}"
+  -- trace[Modular.Elab] "Expr.collectAuxDefs {e} (root: {root}): {names.toArray}"
   for name in names do
     -- matchers get abstracted away, so we shouldn't add them as functions to be translated
     unless name.isAuxDeclOf root && !name.isMatcher do
