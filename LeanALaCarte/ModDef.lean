@@ -80,24 +80,22 @@ def mkMappedDecl (oldNames : Array Name) (newName : Name) (shortNewName : Name :
     throwError "terrible"
   return { ref?, cinfos, newName, shortNewName, isAux, type := types[0]! : MappedHeader}
 
-def withMappedHeadersDecls {α} (decls : Array MappedHeader) (k : Array Expr → ModularM α) : ModularM α :=
+def withMappedHeadersDecls {α} (oldFunCInfo : ConstantInfo) (decls : Array MappedHeader) (k : Array Expr → ModularM α) : ModularM α :=
   let rec loop (i : Nat) (fvars : Array Expr) := do
-    if h : i < decls.size then
-      let header := decls[i]
-      withAuxDecl header.newName header.type header.shortNewName fun fvar =>
-        loop (i+1) (fvars.push fvar)
+    if _ : i < decls.size then
+      let {cinfos, newName, type, shortNewName ,..} := decls[i]
+      withAuxDecl newName type shortNewName fun fvar => do
+        if let some errcinfo := cinfos.find? (·.levelParams != oldFunCInfo.levelParams) then
+          throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfo.name} ({oldFunCInfo.levelParams})"
+        let newMapEntry := {
+          expr := fvar
+          levelParams := []
+          numArgs := 0
+          numHoles := 0}
+        cinfos.foldl (init := loop (i+1) (fvars.push fvar))
+          fun k cinfo => withModifyMap (·.insert cinfo.name newMapEntry) k
     else
       k fvars
-  loop 0 #[]
-
-def withMappedHeadersDeclss {α} (decls : Array (Array MappedHeader)) (k : Array (Array Expr) → ModularM α) : ModularM α :=
-  let rec loop (i : Nat) (fvarss : Array (Array Expr)) := do
-    if h : i < decls.size then
-      let headers := decls[i]
-      withMappedHeadersDecls headers fun fvars =>
-        loop (i+1) (fvarss.push fvars)
-    else
-      k fvarss
   loop 0 #[]
 
 def addUnfoldEqMapping (oldName newName : Name) : ModularM Unit := do
@@ -213,69 +211,53 @@ meta def elabModDef : ModularElab := fun stx =>
       mapHeaders := mapHeaders.push (← mkMappedDecl #[oldAuxName] newAuxName)
     let mainDeclHeader ← mkMappedDecl oldFunNames newFunName newShortName false
     mapHeaders := mapHeaders.push mainDeclHeader
-    withMappedHeadersDecls mapHeaders fun xs => do
-      let add_temp_mappings (map : ModularMap):= do
-        let mut mappings := []
-        for {cinfos, ..} in mapHeaders, x in xs do
-          /- FVars cannot be universe-polymorphic. In particular, if the auxiliary declarations contained happen to not have the exact same universe levels as the original function, this whole thing breaks, with no easy way to fix it...
-          The only culprit kind of auxiliary function I could find that does have more universes than the original declaration's is matchers. This is partly why they are abstracted away entirely in the modmapped term, and fresh matchers get elaborated in place of the original ones in `elabModMatch`.-/
-          if let some errcinfo := cinfos.find? (·.levelParams != oldFunCInfos[0]!.levelParams) then
-            throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfos[0]!.name} ({oldFunCInfos[0]!.levelParams})"
-          let newMapEntry := {
-            expr := x
-            levelParams := []
-            numArgs := 0
-            numHoles := 0}
-          mappings :=  cinfos.foldl (init := mappings) fun mappings cinfo => (cinfo.name,newMapEntry)::mappings
-        return map.insertMany mappings
-      -- mapped values are constructed in a temp map that contains the declarations being currently defined
-      withSetMap (← add_temp_mappings (← getMap)) do
+    withMappedHeadersDecls oldFunCInfos[0]! mapHeaders fun xs => do
       withAssignableSyntheticOpaque do
-        let lctx ← getLCtx
-        let (mvars, mappedValues, mappedTypes) ← withSetModMappedLCtx lctx do modmapHeaders mapHeaders
-        trace[Modular.Elab] "Mapped values : {mappedValues}"
-        let matchExtensions ← getMatchExtensions
-        -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
-        let matchExtensions ← matchExtensions.toArray.filterM fun (mvar,_) => notM mvar.isAssigned
-        -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
-        for (mvar,matchExt) in matchExtensions do
-          try
-            withTraceNode `Modular.Elab (fun | .ok _ => return m!"Successfully elaborated matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches !"
-                                             | .error e => return m!"Failed to elaborate matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches: \n{e.toMessageData}") do
-              elabModMatchNoClauses newFunName mvar matchExt
-              trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
-          catch | _ => continue
-        let matchExtensions ← matchExtensions.filterM fun (mvar,_) => notM mvar.isAssigned
-        let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
-        if matchExtensions.size != matchClauses.size then
-          throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
-        for (mvar,matchExt) in matchExtensions, matchClause in matchClauses do
-          elabModMatch newFunName mvar matchExt matchClause
-        -- We solve mvars generated by extended matches separately
-        -- let mvars ← mvars.mapM getDelayedMVarRoot
-        let mvars ← mvars.filterM (notM ·.isAssigned)
-        trace[Modular.Elab] "Mvars filtered : {mvars.map Expr.mvar}"
+      let lctx ← getLCtx
+      let (mvars, mappedValues, mappedTypes) ← withSetModMappedLCtx lctx do modmapHeaders mapHeaders
+      trace[Modular.Elab] "Mapped values : {mappedValues}"
+      let matchExtensions ← getMatchExtensions
+      -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
+      let matchExtensions ← matchExtensions.toArray.filterM fun (mvar,_) => notM mvar.isAssigned
+      -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
+      for (mvar,matchExt) in matchExtensions do
+        try
+          withTraceNode `Modular.Elab (fun | .ok _ => return m!"Successfully elaborated matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches !"
+                                           | .error e => return m!"Failed to elaborate matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches: \n{e.toMessageData}") do
+            elabModMatchNoClauses newFunName mvar matchExt
+            trace[Modular.Elab] "Elaboration of matcher {matchExt.map (·.matchName)} succeeded without adding new branches"
+        catch | _ => continue
+      let matchExtensions ← matchExtensions.filterM fun (mvar,_) => notM mvar.isAssigned
+      let matchClauses := match_clauses.getD #[] |>.map elabModularWhereMatch
+      if matchExtensions.size != matchClauses.size then
+        throwError "Expected {matchExtensions.size} match extensions, found {matchClauses.size} instead"
+      for (mvar,matchExt) in matchExtensions, matchClause in matchClauses do
+        elabModMatch newFunName mvar matchExt matchClause
+      -- We solve mvars generated by extended matches separately
+      -- let mvars ← mvars.mapM getDelayedMVarRoot
+      let mvars ← mvars.filterM (notM ·.isAssigned)
+      trace[Modular.Elab] "Mvars filtered : {mvars.map Expr.mvar}"
 
-        if mvars.isEmpty then
-          if let some (some tac) := tacs then
-            throwErrorAt tac "Unexpected tactic block: the translation generated no obligations"
-        else
-          let some (some tac) := tacs
-            | throwError "Missing `where ... finally` block to solve the missing holes"
-          solveGoalsWithTactic tac mvars
-        trace[Modular.Elab] "Tactics elaborated"
-        mappedValues.forM fun e => Meta.check e
-        Term.synthesizeSyntheticMVarsNoPostponing
-        let mut mappedValues ← mappedValues.mapM instantiateMVars
-        trace[Modular.Elab] "mapped values after instantiation: {mappedValues}"
-        let declsConsts := mapHeaders.map fun {cinfos, newName, ..} => mkConst newName (cinfos[0]!.levelParams.map Level.param)
-        mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
-        if mappedValues.any Expr.hasExprMVar then
-          throwError "`mod def` generated unresolved metavariables"
-        -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
-        addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
-        addConstInfo newFunStx newFunName mainDeclHeader.type
-    -- All is done, we can leave the `withMappedHeadersDecls` and `withSetMap` scopes and add the correct mappings to the environment
+      if mvars.isEmpty then
+        if let some (some tac) := tacs then
+          throwErrorAt tac "Unexpected tactic block: the translation generated no obligations"
+      else
+        let some (some tac) := tacs
+          | throwError "Missing `where ... finally` block to solve the missing holes"
+        solveGoalsWithTactic tac mvars
+      trace[Modular.Elab] "Tactics elaborated"
+      mappedValues.forM fun e => Meta.check e
+      Term.synthesizeSyntheticMVarsNoPostponing
+      let mut mappedValues ← mappedValues.mapM instantiateMVars
+      trace[Modular.Elab] "mapped values after instantiation: {mappedValues}"
+      let declsConsts := mapHeaders.map fun {cinfos, newName, ..} => mkConst newName (cinfos[0]!.levelParams.map Level.param)
+      mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
+      if mappedValues.any Expr.hasExprMVar then
+        throwError "`mod def` generated unresolved metavariables"
+      -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
+      addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
+      addConstInfo newFunStx newFunName mainDeclHeader.type
+    -- All is done, we can leave the `withMappedHeadersDecls` scopes and add the correct mappings to the environment
     for {cinfos, newName, ..} in mapHeaders do
       addDeclarationRangesFromSyntax newName stx
       let newMapEntry := {
