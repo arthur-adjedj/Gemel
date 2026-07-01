@@ -373,7 +373,7 @@ meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
   IndPredBelow.mkBelow indName
   mkInjectiveTheorems indName
 
-meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) : ModularM (List Constructor) := do
+meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) (ref : Syntax) : ModularM (List Constructor) := do
   let newIndName := extendedInd.newIndName
   withTraceNode `Modular.Elab (fun _ => pure m!"Elaborating extended inductive {newIndName}") do
   let extendedInductive ← extendedInd.toInductiveType oldIndName? oldCtors
@@ -384,6 +384,8 @@ meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor)
   compileDecls #[newIndName]
   mkAuxConstructions newIndName
   extendedInd.addInductiveMappings oldIndName?
+  addDeclarationRangesFromSyntax extendedInductive.name ref
+  extendedInductive.ctors.forM (addDeclarationRangesFromSyntax ·.name ref)
   trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
   return extendedInductive.ctors
 
@@ -394,7 +396,7 @@ meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
   let mut oldIndName? := none
   let mut oldCtors := []
   for extendedInd in extendedInds do
-    oldCtors ← elabExtension oldIndName? oldCtors extendedInd
+    oldCtors ← elabExtension oldIndName? oldCtors extendedInd stx
     oldIndName? := some extendedInd.newIndName
 
 syntax bracketedExplicitBinder := "(" withoutPosition(binderIdent ppSpace ": " term) ")"
@@ -415,7 +417,7 @@ syntax "inductive " "extension " ident binderIdent ("where" ctor*): modular_comm
 
 syntax (name := modular_indctive_def) "inductive" ident ":=" ident ws ("$" ws ident)+ : modular_command
 @[modular_elab modular_indctive_def, incremental]
-meta def elabModInd : ModularElab
+meta def elabModInd : ModularElab := fun stx => match stx with
   | `(modular_command|inductive $ind := $F1 $[$ $i]*) => liftModularM do
     let (newIndName, _) ← mkDeclName (← getCurrNamespace) {} ind.getId
     let some oldIndStx := i.back?
@@ -454,5 +456,6 @@ meta def elabModInd : ModularElab
                            origType := oldInd.type,
                            type := (← modMap oldInd.type),
                            «extension» := F }
-      oldCtors ← elabExtension oldIndName oldCtors extendedInd
+      oldCtors ← elabExtension oldIndName oldCtors extendedInd stx
+
   | _ => throwUnsupportedSyntax

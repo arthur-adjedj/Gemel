@@ -270,7 +270,6 @@ meta def elabModDef : ModularElab := fun stx =>
         mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
         if mappedValues.any Expr.hasExprMVar then
           throwError "`mod def` generated unresolved metavariables"
-        addDeclarationRangesFromSyntax newFunName stx
         -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
         addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
         addConstInfo newFunStx newFunName mainDeclHeader.type
@@ -285,4 +284,5 @@ meta def elabModDef : ModularElab := fun stx =>
         addMapEntry cinfo.name newMapEntry
         addUnfoldEqMapping cinfo.name newName
         addEqnMappings cinfo.name newName
+        addDeclarationRangesFromSyntax cinfo.name stx
   | _ => throwUnsupportedSyntax
