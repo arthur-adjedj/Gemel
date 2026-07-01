@@ -183,10 +183,10 @@ def elabExtendedCtors (newShortIndName newIndName : Name) (newLevelParams : List
             type := type
           }
 
-syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ "where" ctor* :  modular_command
+syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ ("where" ctor*)? :  modular_command
 def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM (List ExtendedInd) := do
   match stx with
-  | `(modular_command|inductive $i $[$params]* extends $inds,* where $ctors*) => do
+  | `(modular_command|inductive $i $[$params]* extends $inds,* $[where $ctors*]?) => do
     Term.withAutoBoundImplicit do
     Term.elabBinders params fun declaredParams => do
     let indExprs ← inds.getElems.mapM fun indStx => do
@@ -223,6 +223,7 @@ def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM (List Extended
     checkNotAlreadyDeclared newIndName
     Term.withDeclName newIndName do
     Term.withoutSavingRecAppSyntax do
+    let ctors := ctors.getD #[]
     let (numParams, addedCtors) ←
       if declaredParams.size == 0 && baseNumParams > 0 then
         try
