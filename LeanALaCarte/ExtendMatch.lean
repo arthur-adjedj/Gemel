@@ -283,7 +283,7 @@ def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
       res := {res with lhss := lhss.toList, rhss}
     return res
 
-def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
+def elabModMatch (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
   unless matchExt.size != 0 do
     throwError "Unexpected: attempted to extend the merging of 0 matchers"
   let {ref, name, alts, argNames} := matchClause
@@ -321,8 +321,8 @@ def elabModMatch (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToEx
     let newMatcherExpr ← MatcherBundle.mkMatcher m alts
     mvar.assign newMatcherExpr
 
-def elabModMatchNoClauses (newFunName : Name) (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
+def elabModMatchNoClauses (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
   unless matchExt.size != 0 do
     throwError "Unexpected: attempted to extend the merging of 0 matchers"
   let .str _ name := matchExt[0]!.matchName | throwError "Unexpected match name {matchExt[0]!.matchName}"
-  elabModMatch newFunName mvar matchExt ⟨.missing, .mkSimple name,#[],#[]⟩
+  elabModMatch mvar matchExt ⟨.missing, .mkSimple name,#[],#[]⟩
