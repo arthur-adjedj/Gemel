@@ -6,7 +6,7 @@ public meta import Lean.Meta.Tactic.Try.Collect
 public import LeanALaCarte.Util
 public import LeanALaCarte.AuxMapping
 public import LeanALaCarte.ExtendMatch
-public import LeanALaCarte.MergeModMaps
+public import LeanALaCarte.MergeExprs
 public meta import Std.Do.Triple.SpecLemmas
 import Lean.Elab.PreDefinition.Basic
 

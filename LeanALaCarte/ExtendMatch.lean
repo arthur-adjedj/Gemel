@@ -1,7 +1,7 @@
 module
 
 public import LeanALaCarte.ModMap
-public import LeanALaCarte.MergeModMaps
+public import LeanALaCarte.MergeExprs
 import all Lean.Elab.Match
 
 public meta section
