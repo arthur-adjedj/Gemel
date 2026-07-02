@@ -9,7 +9,7 @@ modular (name := `A1)
 
 namespace A
 
-/-- trace: [Modular.Elab] [A1] -/
+/-- trace: [Modular.Elab] [_modular.A1] -/
 #guard_msgs in
 modular (name := `A2) (imports := #[`A1])
   -- empty command

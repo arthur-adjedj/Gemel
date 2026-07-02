@@ -336,7 +336,8 @@ def elabModularBlock : CommandElab := fun stx => do
       let opts ← getOptions
       let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modst := modStates.find? (← getEnv) name
+        let fullName := `_modular ++ name
+        let some modst := modStates.find? (← getEnv) fullName
           | throwError "Failed to import modular mapping {name}."
         st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let mut outputs : Array (Command.State × ModularElabState) := #[]
@@ -371,19 +372,22 @@ def elabModularBlock : CommandElab := fun stx => do
       }
       unless cfg.name.isAnonymous do
         let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
-        liftTermElabM <| mkDummyDecl name
-        modifyEnv fun env => modStates.insert env name st
+        let fullName := `_modular ++ name
+        liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
+        modifyEnv fun env => modStates.insert env fullName st
     else
       let mut st : ModularElabState := {}
       for name in cfg.imports do
-        let some modst := modStates.find? (← getEnv) name
+        let fullName := `_modular ++ name
+        let some modst := modStates.find? (← getEnv) fullName
           | throwError "Failed to import modular mapping {name}."
         st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
       unless cfg.name.isAnonymous do
         let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
-        liftTermElabM <| mkDummyDecl name --for some reason, this is necessary...
-        modifyEnv fun env => modStates.insert env name endMap
+        let fullName := `_modular ++ name
+        liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
+        modifyEnv fun env => modStates.insert env fullName endMap
   | _ => throwUnsupportedSyntax
 
 initialize
@@ -391,6 +395,6 @@ initialize
   registerTraceClass `Modular.Elab (inherited := true)
   registerTraceClass `Modular.Subst (inherited := true)
   registerTraceClass `Modular.Match (inherited := true)
-  registerTraceClass `Modular.MergeExprs (inherited := true)
+  registerTraceClass `Modular.Merge (inherited := true)
 
 end
