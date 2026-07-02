@@ -173,6 +173,19 @@ def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (ma
   addPreDefinitions (← getLCtx, ← getLocalInstances) predefs
   trace[Modular.Elab] "Predefs elaborated successfully"
 
+def addFinalMappings (stx : Syntax) (mapHeaders : Array MappedHeader) : ModularM Unit := do
+  for {cinfos, newName, ..} in mapHeaders do
+    addDeclarationRangesFromSyntax newName stx
+    let newMapEntry := {
+      expr := mkConst newName (cinfos[0]!.levelParams.map Level.param)
+      levelParams := cinfos[0]!.levelParams
+      numArgs := 0
+      numHoles := 0}
+    cinfos.forM fun cinfo => do
+      addMapEntry cinfo.name newMapEntry
+      addUnfoldEqMapping cinfo.name newName
+      addEqnMappings cinfo.name newName
+
 def modular_where_match_clause := leading_parser
   "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
 
@@ -206,20 +219,27 @@ meta def elabModDef : ModularElab := fun stx =>
     trace[Modular.Elab] m!"auxiliary definitions to be translated: {extraMapNames}"
     let mut mapHeaders := #[]
     for (oldFunName, oldAuxName) in extraMapNames do
-      let newAuxName := oldAuxName.replacePrefix oldFunName newFunName
+      --We must ensure there are no naming conflicts between auxiliary name functions
+      --eg consider `mod def foo extends A.foo, B.foo` where both `A.foo._proof_1` and `B.foo._proof_1` exist (and are incompatible)
+      let newAuxNameSuffix := oldAuxName.replacePrefix oldFunName .anonymous
+      trace[Modular.Elab] "prefix: {newAuxNameSuffix}"
+      let newAuxName ← mkAuxDeclName newAuxNameSuffix
+      -- This is hacky. Instead, the decl header should be already added to the env here st `mkAuxDeclName` can handle conflicts by itself, TODO: better
+      setDeclNGen (← getDeclNGen).next
+      trace[Modular.Elab] "newAuxName: {newAuxName}"
       -- We don't attempt to merge auxiliary defs for now, it might make sense to try to later
       mapHeaders := mapHeaders.push (← mkMappedDecl #[oldAuxName] newAuxName)
     let mainDeclHeader ← mkMappedDecl oldFunNames newFunName newShortName false
     mapHeaders := mapHeaders.push mainDeclHeader
+    trace[Modular.Elab] "Functions to be elaborated: {mapHeaders.map MappedHeader.newName}"
     withMappedHeadersDecls oldFunCInfos[0]! mapHeaders fun xs => do
       withAssignableSyntheticOpaque do
-      let lctx ← getLCtx
-      let (mvars, mappedValues, mappedTypes) ← withSetModMappedLCtx lctx do modmapHeaders mapHeaders
+      let (mvars, mappedValues, mappedTypes) ← withSetModMappedLCtx (← getLCtx) do modmapHeaders mapHeaders
       trace[Modular.Elab] "Mapped values : {mappedValues}"
       let matchExtensions ← getMatchExtensions
       -- Some matches may have automatically been solved by unification thanks to `withAssignableSyntheticOpaque`
       let matchExtensions ← matchExtensions.toArray.filterM fun (mvar,_) => notM mvar.isAssigned
-      -- Some matches may need to be translated while not really needing new matches, e.g consider a match matching on `List A` in a context mapping `A` to `B`.
+      -- Some matches may need to be translated while not really needing new matches, e.g consider a match on `List A` in a context mapping `A` to `B`.
       for (mvar,matchExt) in matchExtensions do
         try
           withTraceNode `Modular.Elab (fun | .ok _ => return m!"Successfully elaborated matcher {← matchExt.mapM fun m => mkConstWithLevelParams m.matchName} without adding new branches !"
@@ -258,15 +278,5 @@ meta def elabModDef : ModularElab := fun stx =>
       addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
       addConstInfo newFunStx newFunName mainDeclHeader.type
     -- All is done, we can leave the `withMappedHeadersDecls` scopes and add the correct mappings to the environment
-    for {cinfos, newName, ..} in mapHeaders do
-      addDeclarationRangesFromSyntax newName stx
-      let newMapEntry := {
-        expr := mkConst newName (cinfos[0]!.levelParams.map Level.param)
-        levelParams := cinfos[0]!.levelParams
-        numArgs := 0
-        numHoles := 0}
-      cinfos.forM fun cinfo => do
-        addMapEntry cinfo.name newMapEntry
-        addUnfoldEqMapping cinfo.name newName
-        addEqnMappings cinfo.name newName
+    addFinalMappings stx mapHeaders
   | _ => throwUnsupportedSyntax
