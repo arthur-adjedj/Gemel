@@ -3,12 +3,9 @@ module
 public meta import Lean.Elab.PreDefinition.Main
 public meta import LeanALaCarte.CollectAuxDefs
 public meta import Lean.Meta.Tactic.Try.Collect
-public import LeanALaCarte.Util
 public import LeanALaCarte.AuxMapping
 public import LeanALaCarte.ExtendMatch
-public import LeanALaCarte.MergeExprs
 public meta import Std.Do.Triple.SpecLemmas
-import Lean.Elab.PreDefinition.Basic
 
 public meta section
 
@@ -97,38 +94,6 @@ def withMappedHeadersDecls {α} (oldFunCInfo : ConstantInfo) (decls : Array Mapp
     else
       k fvars
   loop 0 #[]
-
-def addUnfoldEqMapping (oldName newName : Name) : ModularM Unit := do
-  let some oldEqn ← getUnfoldEqnFor? oldName true | return
-  let some newEqn ← getUnfoldEqnFor? newName true | return
-  trace[Modular.Elab] "oldEqns : {oldEqn}"
-  trace[Modular.Elab] "newEqns : {newEqn}"
-  addAuxMapping oldEqn newEqn
-
-def mapOldToNewEqnLemmas (oldName newName : Name) : ModularM (Option (AssocList Name Name)) := do
-  let mut some oldEqns ← getEqnsFor? oldName | return none
-  let mut some newEqns ← getEqnsFor? newName | return none
-  let mut res := AssocList.empty
-  for i in [:oldEqns.size] do
-    for j in [:newEqns.size] do
-      if (← areCompatible oldEqns[i]! newEqns[j]!) then
-        res := res.cons oldEqns[i]! newEqns[j]!
-  return res
-where
-  areCompatible (oldEqnName newEqnName : Name) : ModularM Bool := do
-    let oldEqn ← getConstInfo oldEqnName
-    let newEqn ← getConstInfo newEqnName
-    let oldTy ← modMap oldEqn.type
-    let newTy := newEqn.type
-    let (_,_,oldTy) ← forallMetaTelescopeReducing oldTy
-    let (_,_,newTy) ← forallMetaTelescopeReducing newTy
-    withTransparency .none (isDefEq oldTy newTy)
-
-def addEqnMappings (oldName newName : Name) : ModularM Unit := do
-  let some eqnMappings ← mapOldToNewEqnLemmas oldName newName | return
-  trace[Modular.Elab] "eqnMappings : {eqnMappings.toList}"
-  for (oldEqn, newEqn) in eqnMappings do
-    addAuxMapping oldEqn newEqn
 
 instance : ToMessageData PreDefinition where
   toMessageData m :=

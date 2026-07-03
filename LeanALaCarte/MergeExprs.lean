@@ -1,7 +1,7 @@
 module
 
 public meta import LeanALaCarte.Elab
-import Lean.Meta.Basic
+public import LeanALaCarte.Elab
 open Lean Meta
 public meta section
 

@@ -2,9 +2,10 @@ module
 
 public import Lean.Elab.Command
 public meta import Lean.Elab.Command
-public meta import Lean.Elab.Tactic.Config
-public meta import Lean.EnvExtension
-import Lean.Elab.Tactic.Config
+public meta import Lean.Elab.ConfigEval.Basic
+import Lean.Elab.ConfigEval.Commands
+public meta import Lean.Elab.ConfigEval.DeriveEvalExpr
+public meta import Lean.Elab.ConfigEval.Instances
 public section
 
 open Lean Meta Elab Command Term
