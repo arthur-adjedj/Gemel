@@ -325,6 +325,7 @@ def elabModularBlock : CommandElab := fun stx => do
   match stx with
   | `(command| modular $cfg:optConfig $[$m]* ) => do
     withExporting do
+    let currNamespace ← getCurrNamespace
     trace[Modular.Elab] s!"{modStates.getState (← getEnv) |>.keys}"
     let cfg ← elabModularSetup cfg
     if let some snap := (← read).snap? then
@@ -371,7 +372,7 @@ def elabModularBlock : CommandElab := fun stx => do
         : ModularBlockSnapshot
       }
       unless cfg.name.isAnonymous do
-        let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
+        let (name, _) ← mkDeclName currNamespace {} cfg.name
         let fullName := `_modular ++ name
         liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
         modifyEnv fun env => modStates.insert env fullName st
@@ -384,7 +385,7 @@ def elabModularBlock : CommandElab := fun stx => do
         st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
       let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
       unless cfg.name.isAnonymous do
-        let (name, _) ← mkDeclName (← getCurrNamespace) {} cfg.name
+        let (name, _) ← mkDeclName currNamespace {} cfg.name
         let fullName := `_modular ++ name
         liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
         modifyEnv fun env => modStates.insert env fullName endMap

@@ -28,7 +28,7 @@ def MatcherBundle.replaceLCtx (m : MatcherBundle) (lctx : LocalContext) : Matche
   { lctx := lctx
     discrs := m.discrs.map fun ⟨e,h?⟩ => ⟨subst.apply e,h?⟩
     matchType := subst.apply m.matchType
-    lhss := m.lhss.map fun ⟨ref,fvarDecls,patterns⟩ => ⟨ref,fvarDecls.map (LocalDecl.applyFVarSubst subst),patterns.map (Match.Pattern.applyFVarSubst subst)⟩
+    lhss := m.lhss.map fun ⟨ref, fvarDecls, patterns⟩ => ⟨ref, fvarDecls.map (LocalDecl.applyFVarSubst subst), patterns.map (Match.Pattern.applyFVarSubst subst)⟩
     rhss := m.rhss.map subst.apply }
 
 def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
