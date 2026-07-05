@@ -412,15 +412,15 @@ def mkCasesOnMapping (oldIndName newIndName : Name): ModularM Unit := do
   modifyMap (·.insert oldRecOnName recExt)
 
 
-def addCtorsMappings (oldIndName : Name) (extendedInductive : ExtendedInd)  : ModularM Unit := do
-  let newIndName := extendedInductive.newIndName
-  let newIndParams := extendedInductive.levelParams
+def addCtorsMappings (oldIndName newIndName : Name) (mapInd? : Bool := true) : ModularM Unit := do
+  let {levelParams := newIndParams,..} ← getConstInfoInduct newIndName
   let newIndLevels := newIndParams.map Level.param
-  let indExtension := { expr := mkConst newIndName newIndLevels
-                        levelParams := newIndParams
-                        numArgs := 0
-                        numHoles := 0 }
-  modifyMap (·.insert oldIndName indExtension)
+  if mapInd? then
+    let indExtension := { expr := mkConst newIndName newIndLevels
+                          levelParams := newIndParams
+                          numArgs := 0
+                          numHoles := 0 }
+    modifyMap (·.insert oldIndName indExtension)
   let indVal ← getConstInfoInduct oldIndName
   for ctorName in indVal.ctors do
     let newCtorName := ctorName.replacePrefix oldIndName newIndName
@@ -431,18 +431,21 @@ def addCtorsMappings (oldIndName : Name) (extendedInductive : ExtendedInd)  : Mo
     modifyMap (·.insert ctorName ctorExt)
     mkAuxMappings [mkInjName, mkInjEqName, mkNoConfusionName] ctorName newCtorName
 
-def ExtendedInd.addMappings (extendedInductive : ExtendedInd)  (oldIndName newIndName : Name) : ModularM Unit := do
-  addCtorsMappings oldIndName extendedInductive
+def ExtendedInd.addMappings (oldIndName newIndName : Name) : ModularM Unit := do
+  addCtorsMappings oldIndName newIndName
   let newRecName := mkRecName newIndName
   let oldRecName := mkRecName oldIndName
   mkRecMapping oldRecName newRecName
   mkRecOnMapping oldIndName newIndName
   mkCasesOnMapping oldIndName newIndName
   let mkAuxNames := [mkCtorIdxName, mkCtorElimTypeName, mkCtorElimName, mkNoConfusionTypeName, mkNoConfusionName, mkBelowName, mkBRecOnName, mkSizeOfName]
+  let oldIndVal ← getConstInfoInduct oldIndName
+  if (← isInductivePredicateVal oldIndVal) && oldIndVal.isRec && !oldIndVal.isUnsafe then
+    addCtorsMappings (mkBelowName oldIndName) (mkBelowName newIndName) false
   mkAuxMappings mkAuxNames oldIndName newIndName
 
 def IndExtension.AddInd.addMappings (extendedInductive : ExtendedInd) (a : AddInd) : ModularM Unit := do
-  extendedInductive.addMappings a.indName extendedInductive.newIndName
+  ExtendedInd.addMappings a.indName extendedInductive.newIndName
 
 def ExtendedInd.addExtensionMappings (extendedInductive : ExtendedInd) : ModularM Unit :=
   match extendedInductive.extension with
@@ -453,7 +456,7 @@ def ExtendedInd.addInductiveMappings (oldIndName? : Option Name) (extendedInduct
   extendedInductive.addExtensionMappings
   let some oldIndName := oldIndName? | return
   let newIndName := extendedInductive.newIndName
-  extendedInductive.addMappings oldIndName newIndName
+  ExtendedInd.addMappings oldIndName newIndName
 
 meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
   mkRecOn indName
