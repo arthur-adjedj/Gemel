@@ -83,7 +83,7 @@ def withMappedHeadersDecls {α} (oldFunCInfo : ConstantInfo) (decls : Array Mapp
       let {cinfos, newName, type, shortNewName ,..} := decls[i]
       withAuxDecl newName type shortNewName fun fvar => do
         if let some errcinfo := cinfos.find? (·.levelParams != oldFunCInfo.levelParams) then
-          throwError s!"Unexpected: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfo.name} ({oldFunCInfo.levelParams})"
+          throwError s!"Internal error: Unable to abstract auxiliary function {errcinfo.name}: one of the original declarations has different level parameters ({errcinfo.levelParams}) compared to {oldFunCInfo.name} ({oldFunCInfo.levelParams})"
         let newMapEntry := {
           expr := fvar
           levelParams := []
@@ -115,7 +115,7 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
     mappedValues := mappedValues.push mappedValue
     let mappedType ← inferType mappedValue
     unless ← isDefEq mappedType type do
-      throwError m!"Unexpected: mismatch between modmapped type and type of modmapped value : {type} ≠ {mappedType}"
+      throwError m!"Internal error: mismatch between modmapped type and type of modmapped value : {type} ≠ {mappedType}"
     if mappedType.hasMVar then
       throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
     mappedTypes := mappedTypes.push type
@@ -238,7 +238,7 @@ meta def elabModDef : ModularElab := fun stx =>
       let declsConsts := mapHeaders.map fun {cinfos, newName, ..} => mkConst newName (cinfos[0]!.levelParams.map Level.param)
       mappedValues := mappedValues.map (·.replaceFVars xs declsConsts)
       if mappedValues.any Expr.hasExprMVar then
-        throwError "`mod def` generated unresolved metavariables"
+        throwError "Internal error: `mod def` generated unresolved metavariables"
       -- Once the mappedValues have been filled in correctly, we can safely construct the predefinitions
       addPreDefs modifiers termination_hint mapHeaders mappedValues mappedTypes
       addConstInfo newFunStx newFunName mainDeclHeader.type

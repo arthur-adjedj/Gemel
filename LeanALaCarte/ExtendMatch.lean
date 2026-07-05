@@ -124,7 +124,7 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   let {lctx, discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
   withLCtx' lctx do
   unless oldlhss.length == oldrhss.size do
-    throwError "Unexpected error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
+    throwError "Internal error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
   trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
@@ -175,7 +175,7 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
   trace[Modular.Match] "lhss : {← lhss.mapM fun lhs => lhs.patterns.mapM fun p => p.toExpr}"
   trace[Modular.Match] "rhss : {rhss}"
   unless lhss.length == rhss.size do
-    throwError "Unexpected error: number of lhs ({lhss.length}) and rhs ({rhss.size}) in generated match differ"
+    throwError "Internal error: number of lhs ({lhss.length}) and rhs ({rhss.size}) in generated match differ"
   let numDiscrs := discrs.size
   let matcherName ← mkAuxName `match
   trace[Modular.Match] "matcherName : {matcherName}"
@@ -259,7 +259,7 @@ def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
   withTraceNode `Modular.Match (fun | .ok _ => return m!"Merging matcherBundles"
                                     | .error e => return m!"Merging matcherBundles : {e.toMessageData}") do
   if _ : ms.size = 0 then
-    throwError "Unexpected: empty array of matcher bundles"
+    throwError "Internal error: empty array of matcher bundles"
   else if _ : ms.size = 1 then
     return ms[0]
   else
@@ -285,9 +285,9 @@ def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
 
 def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
   unless matchExts.size != 0 do
-    throwError "Unexpected: attempted to extend the merging of 0 matchers"
+    throwError "Internal error: attempted to extend the merging of 0 matchers"
   let {ref, name, alts, argNames} := matchClause
-  if ← mvar.isAssigned then return
+  if ← mvar.isAssigned then throwError "Internal error: mvar {Expr.mvar mvar} for match {name} is already assigned"
   withRef ref do
   -- We consider the first matcher in the array to be "canonical", in that its name will be used
   let {matchName, mvar := matchmvar, originalLCtx,..} := matchExts[0]!
@@ -323,6 +323,6 @@ def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause 
 
 def elabModMatchNoClauses (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
   unless matchExt.size != 0 do
-    throwError "Unexpected: attempted to extend the merging of 0 matchers"
+    throwError "Internal error: attempted to extend the merging of 0 matchers"
   let .str _ name := matchExt[0]!.matchName | throwError "Unexpected match name {matchExt[0]!.matchName}"
   elabModMatch mvar matchExt ⟨.missing, .mkSimple name,#[],#[]⟩

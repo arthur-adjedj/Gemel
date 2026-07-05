@@ -60,7 +60,7 @@ where
   @[inline]
   mergeArgs (args₁ args₂ : Array Expr) := do
     unless args₁.size = args₂.size do
-      throwError "Unexpected when merging exprs: not the same number of arguments: \n{args₁}\n{args₂} "
+      throwError "Internal error: when merging exprs: not the same number of arguments: \n{args₁}\n{args₂} "
     args₁.zipWithM (bs := args₂) mergeExprsBin
 
   traverse (e₁ e₂ : Expr) : ModularM Expr :=
@@ -122,7 +122,7 @@ where
 
 def mergeExprs (es : Array Expr) : ModularM Expr := withModMappedLCtx do
   if es.isEmpty then
-    throwError "Unexpected, "
+    throwError "Internal error: Attempted to merge 0 expressions"
   if es.size = 1 then
     return es[0]!
   let mut res := es[0]!
