@@ -118,7 +118,7 @@ def modmapHeaders (mapHeaders : Array MappedHeader) : ModularM (List MVarId × A
       throwError m!"Unexpected: mismatch between modmapped type and type of modmapped value : {type} ≠ {mappedType}"
     if mappedType.hasMVar then
       throwError "Type {mappedType} contains mvars, unfortunate. TODO addDecl while avoiding kernel check so this doesn't throw an error. We will discard this environment anyway as soon as the predefs are elabed."
-    mappedTypes := mappedTypes.push mappedType
+    mappedTypes := mappedTypes.push type
   return (mvars, mappedValues, mappedTypes)
 
 def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (mapHeaders : Array MappedHeader) (mappedValues mappedTypes : Array Expr): ModularM Unit := do
