@@ -13,16 +13,16 @@ partial def getDelayedMVarRoot' [Monad m] [MonadMCtx m] (mvarId : MVarId) : m (M
     return (m,n+d.fvars.size)
   | none   => return (mvarId,0)
 
-def throwNotSameShape (e₁ e₂ : Expr) : CoreM α :=
+def throwNotSameShape (e₁ e₂ : Expr) : ModularM α :=
   throwError "The following terms do not have the same shape, and thus cannot be merged: {indentExpr e₁} {indentExpr e₂}"
 
 -- For now, the algorithm is really naive and merges exprs 2 by 2. Once this is stable and works well enough, we can optimise this function to take an array of exprs instead, and match on the first one.
 partial def mergeExprsBin (e₁ e₂ : Expr) : ModularM Expr :=
   withIncRecDepth do
-  withTraceNode `Modular.Merge (λ exn => withModMappedLCtx do return m!"mergeExprsBin {indentExpr e₁} {indentExpr e₂} \n⇒{← (return exn.toOption.map indentExpr)}") do
+  withTraceNode `Modular.Merge (λ exn => return m!"mergeExprsBin {indentExpr e₁} {indentExpr e₂} \n⇒{← (return exn.toOption.map indentExpr)}") do
   e₁.withApp fun fn₁ args₁ => do
   e₂.withApp fun fn₂ args₂ => do
-  match fn₁,fn₂ with
+  match fn₁, fn₂ with
   | .mvar m₁, .mvar m₂ => do
     let (m₁,_) ← getDelayedMVarRoot' m₁
     let (m₂,_) ← getDelayedMVarRoot' m₂
@@ -70,7 +70,7 @@ where
   | .lit _, .lit _
   | .const .., .const ..
   | .sort _, .sort _ => do
-    unless e₁ == e₂ do --might be too strict ? what about let-bound or proof-irrelevant fvars ?
+    unless ← isDefEqGuarded e₁ e₂ do --might be too strict ? what about let-bound or proof-irrelevant fvars ?
       throwNotSameShape e₁ e₂
     return e₁
   | .proj tyName₁ idx₁ struct₁, .proj tyName₂ idx₂ struct₂ => do
@@ -120,7 +120,7 @@ where
     return .app f a
   | _,_ => throwNotSameShape e₁ e₂
 
-def mergeExprs (es : Array Expr) : ModularM Expr := do
+def mergeExprs (es : Array Expr) : ModularM Expr := withModMappedLCtx do
   if es.isEmpty then
     throwError "Unexpected, "
   if es.size = 1 then

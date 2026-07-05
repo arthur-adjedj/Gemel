@@ -283,23 +283,23 @@ def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
       res := {res with lhss := lhss.toList, rhss}
     return res
 
-def elabModMatch (mvar : MVarId) (matchExt : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
-  unless matchExt.size != 0 do
+def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause : MatchClause) : ModularM Unit := do
+  unless matchExts.size != 0 do
     throwError "Unexpected: attempted to extend the merging of 0 matchers"
   let {ref, name, alts, argNames} := matchClause
   if ← mvar.isAssigned then return
   withRef ref do
   -- We consider the first matcher in the array to be "canonical", in that its name will be used
-  let {matchName, mvar := matchmvar, originalLCtx,..} := matchExt[0]!
+  let {matchName, mvar := matchmvar, originalLCtx,..} := matchExts[0]!
   unless mvar == matchmvar do
-    throwError "Internal error: expected matcher to have mvar {Expr.mvar mvar} ({Expr.mvar <| ← getDelayedMVarRoot mvar}), found {Expr.mvar matchmvar} ({Expr.mvar <| ← getDelayedMVarRoot matchmvar}) instead (All matchers' mvars : {matchExt.map (Expr.mvar ·.mvar)})"
+    throwError "Internal error: expected matcher to have mvar {Expr.mvar mvar} ({Expr.mvar <| ← getDelayedMVarRoot mvar}), found {Expr.mvar matchmvar} ({Expr.mvar <| ← getDelayedMVarRoot matchmvar}) instead (All matchers' mvars : {matchExts.map (Expr.mvar ·.mvar)})"
   trace[Modular.Match] "Elaborating matcher : {name} {Expr.mvar mvar}"
   let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
   unless Name.mkSimple matchName = name do
     throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
   let mut matcherBundles := #[]
   withTraceNode `Modular.Match (fun _ => return "Generating Matcher bundles") do←
-    for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExt do
+    for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExts do
       let mvarDecl ← matchmvar.getDecl
       withSetModMappedLCtx mvarDecl.lctx do←
       withLCtx' originalLCtx do←
