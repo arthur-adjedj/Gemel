@@ -320,6 +320,9 @@ def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause 
     let m ← mergeMatcherBundles matcherBundles
     let newMatcherExpr ← MatcherBundle.mkMatcher m alts
     mvar.assign newMatcherExpr
+    -- Without this, the mvar doesn't get instantiated by later `instantiateMVars` for some unknown reason.. TODO investigate
+    -- repro in lean-stlc, `LR.nrec'` in BoolNatTerm
+    assert! ← mvar.isAssigned
 
 def elabModMatchNoClauses (mvar : MVarId) (matchExt : Array MatchToExtend) : ModularM Unit := do
   unless matchExt.size != 0 do
