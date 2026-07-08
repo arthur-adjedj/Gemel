@@ -173,4 +173,20 @@ def elabModularAddMapping : ModularElab := fun stx => do
     addAuxMapping old new
   | _ => throwUnsupportedSyntax
 
+syntax (name := modular_add_term_mapping) "add_term_mapping" ident "=>" term : modular_command
+@[modular_elab modular_add_term_mapping]
+def elabModularAddTermMapping : ModularElab := fun stx => do
+  match stx with
+  | `(modular_command| add_term_mapping $old => $new) => liftModularM do
+    let old ← resolveGlobalConstNoOverload old
+    let cinfo ← getConstInfo old
+    let ty ← modMap cinfo.type
+    let new ← Term.elabTerm new (some ty)
+    let new ← Meta.abstractMVars new
+    addMapEntry old { expr := new.expr
+                      levelParams := cinfo.levelParams
+                      numArgs := 0
+                      numHoles := new.numMVars }
+  | _ => throwUnsupportedSyntax
+
 end

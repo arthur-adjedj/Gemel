@@ -31,6 +31,7 @@ partial def modMapAux (e : Expr): ModularM Expr := do
     trace[Modular.Subst] m!"args instantiated : {res}"
     trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
     -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
+    -- They might be generated in the wrong context here. Consider a mapping `foo => fun x => bar x ?_`, the mvar won't have `x` in its context here. TODO something akin to `refine` probably
     let mvars ← withModMappedLCtx do Array.mkM ext.numHoles (mkFreshExprMVar none .syntheticOpaque)
     trace[Modular.Subst] m!"mvars : {mvars}"
     let res := res.instantiateRev mvars
