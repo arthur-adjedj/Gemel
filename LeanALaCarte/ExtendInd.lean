@@ -177,6 +177,9 @@ def elabExtendedCtors (newShortIndName newIndName : Name) (newLevelParams : List
           let extraCtorParams ← Term.collectUnassignedMVars (← instantiateMVars type) #[] except
           let type ← mkForallFVars (extraCtorParams ++ ctorParams) type
           let type ← mkForallFVars params type
+          Meta.check type
+          Term.synthesizeSyntheticMVarsNoPostponing
+          let type ← instantiateMVars type
           let type := type.replaceFVar indFVar newIndConst
           return {
             name := /- newIndName ++-/ ctorName
