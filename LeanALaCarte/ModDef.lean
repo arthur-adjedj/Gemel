@@ -127,7 +127,7 @@ def addPreDefs (modifiers : Modifiers) (termination_hint : TerminationHints) (ma
     let predef := { ref := if isAux then .missing else ref?.getD .missing
                     kind := cinfos[0]!.kind! --TODO ensure all cinfos have the same kind somewhere ?
                     levelParams := cinfos[0]!.levelParams
-                    modifiers := modifiers
+                    modifiers := if isAux then default else modifiers
                     declName := newName
                     binders := .missing
                     type := mappedType
