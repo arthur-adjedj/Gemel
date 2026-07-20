@@ -70,11 +70,9 @@ deriving Inhabited
 def mkMappedDecl (oldNames : Array Name) (newName : Name) (shortNewName : Name := newName) (isAux := true) (ref? : Option Syntax := none): ModularM MappedHeader := do
   let cinfos ← oldNames.mapM fun oldName => getConstInfo oldName
   let types ← cinfos.mapM fun cinfo => modMap cinfo.type
-  -- If any of the modmapped types only gets partially mapped, we fail. We could potentially ask users to fill in those holes, or we may even consider merging types here in the future.
-  if types.any Expr.hasMVar then
-    throwError "ohno, this is bad!"
-  if types[1:].any (types[0]! != · ) then
-    throwError "terrible"
+  let type ← mergeExprs types
+  if type.hasMVar then
+    throwError "modmapped type of declaration {oldNames} contains unsolved holes: {type}"
   return { ref?, cinfos, newName, shortNewName, isAux, type := types[0]! : MappedHeader}
 
 def withMappedHeadersDecls {α} (oldFunCInfo : ConstantInfo) (decls : Array MappedHeader) (k : Array Expr → ModularM α) : ModularM α :=
