@@ -140,28 +140,16 @@ def modularGuardMsgsCodeAction : Lean.CodeAction.CommandCodeAction := fun _ _ _ 
       }
   }]
 
-syntax (name := modular_set_option)
-  "set_option " Lean.Parser.identWithPartialTrailingDot ppSpace optionValue " in" ppLine modular_command : modular_command
+-- syntax (name := modular_run_command) command : modular_command
 
-@[modular_elab modular_set_option]
-def elabModularSetOption : ModularElab := fun stx => do
-  match stx with
-  | `(modular_command| set_option $id $val in $cmd) => do
-    let opts ← elabSetOption id val
-    withScopedOptions opts.1 do
-      elabModularCommand cmd
-  | _ => throwUnsupportedSyntax
-
-syntax (name := modular_run_command) command : modular_command
-
-@[modular_elab modular_run_command, incremental]
-def elabModularElabCommand : ModularElab := fun stx => do
-  if stx.isOfKind ``modular_run_command then
+-- @[modular_elab modular_run_command, incremental]
+-- def elabModularElabCommand : ModularElab := fun stx => do
+  -- if stx.isOfKind ``modular_run_command then
     -- TODO figure out a way to keep the command diagnostics with incrementality enabled
-    withoutModularCommandIncrementality true do
-      elabCommand stx[0]
-  else
-    throwUnsupportedSyntax
+    -- withoutModularCommandIncrementality true do
+      -- elabCommand stx[0]
+  -- else
+    -- throwUnsupportedSyntax
 
 syntax (name := modular_add_mapping) "add_mapping" ident "=>" ident : modular_command
 @[modular_elab modular_add_mapping]

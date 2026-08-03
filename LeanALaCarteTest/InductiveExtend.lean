@@ -59,51 +59,55 @@ namespace test2
 
 -- set_option trace.Modular.Elab true
 -- set_option trace.Modular.Subst true
-modular
-  inductive Natt' extends Nat where
+modular test
+  mod inductive Natt' extends Nat where
     | succ' : Natt' → Natt'
+modular end test
 
-modular
-
-  /-- info: test2.Natt'.succ' : Natt' → Natt' -/
+modular test'
+/-- info: test2.Natt'.succ' : Natt' → Natt' -/
 #guard_msgs in
-  #check Natt'.succ'
+#check Natt'.succ'
+modular end test'
 
-modular
-  /-- info: Nat -/
-  #guard_msgs in
-  #check_translation Nat
+modular test''
+/-- info: Nat -/
+#guard_msgs in
+#check_translation Nat
+modular end test''
 
--- set_option trace.Modular.Elab true
--- set_option trace.Modular.Subst true
-modular
-  inductive Natt2 extends Nat where
-    | succ' : Natt2 → Natt2
-  /-- info: Natt2 -/
-  #guard_msgs in
-  #check_translation Nat
+modular test'''
+mod inductive Natt2 extends Nat where
+  | succ' : Natt2 → Natt2
+/-- info: Natt2 -/
+#guard_msgs in
+#check_translation Nat
+modular end test'''
 
 end test2
 
 namespace test3
 
 -- Parameterized type with an extra constructor (result type inferred).
-modular
-  inductive OptionExt extends Option where
-    | extra
+modular optionExt
+mod inductive OptionExt extends Option where
+  | extra
+modular end optionExt
 
 -- Another parameterized type with an extra constructor.
-modular
-  inductive ListExt extends List where
-    | extra
+modular listExt
+mod inductive ListExt extends List where
+  | extra
+modular end listExt
 
 -- Indexed families currently test shape/support best without new constructors.
-modular
-  inductive EqExt extends Eq where
+modular eqExt
+mod inductive EqExt extends Eq where
+modular end eqExt
 
-modular
-  inductive VectorExt extends Vector where
-
+modular vecExt
+mod inductive VectorExt extends Vector where
+modular end vecExt
 end test3
 
 namespace test4
@@ -111,10 +115,10 @@ namespace test4
 inductive Var (α : Type) where
   | var : α → Var α
 
-modular
-  inductive Term' (α : Type) extends Var α where
-    | lam : Term' α → Term' α
-    | app : Term' α → Term' α → Term' α
+modular term'
+mod inductive Term' (α : Type) extends Var α where
+  | lam : Term' α → Term' α
+  | app : Term' α → Term' α → Term' α
 
 /-- info: test4.Term' (α : Type) : Type -/
 #guard_msgs in
@@ -128,6 +132,7 @@ modular
 /-- info: test4.Term'.app {α : Type} : Term' α → Term' α → Term' α -/
 #guard_msgs in
 #check Term'.app
+modular end term'
 end test4
 
 namespace test5
@@ -152,7 +157,8 @@ def Var.wk (R : Ren Γ Δ) : Var Γ B → Var Δ B
   | var h => .var (R _ h)
 set_option pp.match false in
 
-modular
-  inductive Term extends Var where
+
+modular term
+  mod inductive Term extends Var where
     | lam : Term (A::Γ) B → Term Γ (.arr A B)
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B

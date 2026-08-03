@@ -1,28 +1,19 @@
 import LeanALaCarte
 
 set_option trace.Modular.Elab true
-/--
-trace: [Modular.Elab] []
----
-trace: [Modular.Elab] ✅️ run_cmd
-        return
--/
+/-- trace: [Modular.Elab] (name := A1) (imports := #[]) -/
 #guard_msgs in
-modular (name := `A1)
+modular A1
   -- empty command
-  run_cmd return
-
+  -- run_cmd return
+modular end A1
 namespace A
 
-/--
-trace: [Modular.Elab] [_modular.A1]
----
-trace: [Modular.Elab] ✅️ run_cmd
-        return
--/
+/-- trace: [Modular.Elab] (name := A.A2) (imports := #[A1]) -/
 #guard_msgs in
-modular (name := `A2) (imports := #[`A1])
+modular A2 (imports := A1)
   -- empty command
   run_cmd return
+modular end A2
 
 end A

@@ -1,6 +1,7 @@
 module
 
 public import Lean.Elab.Command
+public import Lean.Parser.Basic
 public meta import Lean.Elab.Command
 public meta import Lean.Elab.ConfigEval.Basic
 import Lean.Elab.ConfigEval.Commands
@@ -8,7 +9,7 @@ public meta import Lean.Elab.ConfigEval.DeriveEvalExpr
 public meta import Lean.Elab.ConfigEval.Instances
 public section
 
-open Lean Meta Elab Command Term
+open Lean Meta Elab Command Term Parser
 
 namespace IndExtension
 
@@ -304,14 +305,19 @@ instance : ToSnapshotTree ModularBlockSnapshot where
 
 structure ModularSetup where
   name : Name := .anonymous
+  fullName : Name := .anonymous
   imports : Array Name := #[]
 
 declare_command_config_elab elabModularSetup ModularSetup
 
-syntax (name := modular_block) "modular" Parser.Tactic.optConfig manyIndent(modular_command) : command
-
 initialize modStates : MapDeclarationExtension ModularElabState ←
   mkMapDeclarationExtension (asyncMode := .sync)
+
+structure CurrModState extends ModularSetup, ModularState
+deriving Inhabited
+
+initialize currModState : EnvExtension CurrModState ←
+  registerEnvExtension (pure {}) (asyncMode := .sync)  --
 
 def mkDummyDecl (name : Name) : CoreM Unit :=
   addDecl (.defnDecl { name
@@ -321,76 +327,132 @@ def mkDummyDecl (name : Name) : CoreM Unit :=
                        hints := default
                        safety := default })
 
+def nonReservedName : Parser := Parser.nonReservedSymbol "name"
+def nonReservedImports : Parser := Parser.nonReservedSymbol "imports"
+
+syntax (name := modular_block) "modular" ident ("(" nonReservedImports ":=" ident,+ ")")? : command
+
 @[command_elab modular_block, incremental]
 def elabModularBlock : CommandElab := fun stx => do
-  match stx with
-  | `(command| modular $cfg:optConfig $[$m]* ) => do
-    withExporting do
-    let currNamespace ← getCurrNamespace
-    trace[Modular.Elab] s!"{modStates.getState (← getEnv) |>.keys}"
-    let cfg ← elabModularSetup cfg
-    if let some snap := (← read).snap? then
-      let oldSnap? := do
-        let oldSnap ← snap.old?
-        oldSnap.val.get.toTyped? ModularBlockSnapshot
-      if snap.old?.isSome && oldSnap?.isNone then
-        snap.old?.forM (·.val.cancelRec)
-      let opts ← getOptions
-      let mut st : ModularElabState := {}
-      for name in cfg.imports do
-        let fullName := `_modular ++ name
-        let some modst := modStates.find? (← getEnv) fullName
-          | throwError "Failed to import modular mapping {name}."
-        st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
-      let mut outputs : Array (Command.State × ModularElabState) := #[]
-      let oldCmds? := oldSnap?.map (·.cmds)
-      let oldOutputs? := oldSnap?.map (·.outputs)
-      let mut reusedPrefix := true
-      for i in [:m.size] do
-        let cmd : Syntax := m[i]!
-        let oldCmd? := oldCmds?.bind (·[i]?)
-        let oldOutput? := oldOutputs?.bind (·[i]?)
-        if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
-          match oldOutput? with
-          | some (oldState, oldSt) =>
-            set oldState
-            st := oldSt
-            outputs := outputs.push (oldState, oldSt)
-          | none =>
-            reusedPrefix := false
-            let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run st
-            st := newMap
-            outputs := outputs.push ((← get), st)
-        else
-          reusedPrefix := false
-          let (_, newst) ← elabModularCommand cmd |>.run {} |>.run st
-          st := newst
-          outputs := outputs.push ((← get), st)
-      snap.new.resolve <| .ofTyped {
-        diagnostics := .empty
-        cmds := m.map (·.raw)
-        outputs
-        : ModularBlockSnapshot
-      }
-      unless cfg.name.isAnonymous do
-        let (name, _) ← mkDeclName currNamespace {} cfg.name
-        let fullName := `_modular ++ name
-        liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
-        modifyEnv fun env => modStates.insert env fullName st
-    else
-      let mut st : ModularElabState := {}
-      for name in cfg.imports do
-        let fullName := `_modular ++ name
-        let some modst := modStates.find? (← getEnv) fullName
-          | throwError "Failed to import modular mapping {name}."
-        st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
-      let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
-      unless cfg.name.isAnonymous do
-        let (name, _) ← mkDeclName currNamespace {} cfg.name
-        let fullName := `_modular ++ name
-        liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
-        modifyEnv fun env => modStates.insert env fullName endMap
-  | _ => throwUnsupportedSyntax
+  let `(command| modular $n:ident $[(imports := $[$imports],*)]? ) := stx
+    | throwUnsupportedSyntax
+  let currNamespace ← getCurrNamespace
+  let (modName, _) ← mkDeclName currNamespace {} n.getId
+  let fullName := `_modular ++ modName
+  let currState := currModState.getState (← getEnv)
+  unless currState.name.isAnonymous do
+    throwError "Cannot open a modular state in an already open modular state (trying to open `{modName}` in state `{currState.name}`)"
+  -- let currNamespace ← getCurrNamespace
+  let mut st : ModularElabState := modStates.getState (← getEnv) |>.getD fullName {}
+  let imports := imports |>.getD #[] |>.map TSyntax.getId
+  for importName in imports do
+    let fullName := `_modular ++ importName
+    let some modst := modStates.find? (← getEnv) fullName
+      | throwError "Failed to import modular mapping {importName}."
+    st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
+  let modSt := {st with name := modName, fullName, imports }
+  trace[Modular.Elab] s!"(name := {modSt.name}) (imports := {modSt.imports})"
+  setEnv (currModState.setState (← getEnv) modSt)
+
+syntax (name := modular_command_as_command) modular_command : command
+
+@[command_elab modular_command_as_command, incremental]
+def elabModularCommand' : CommandElab := fun cmd => do
+  let `(command| $cmd:modular_command) := cmd
+    | throwUnsupportedSyntax
+  let st := currModState.getState (← getEnv)
+  if st.name.isAnonymous then
+    throwError "Cannot elaborate modular command without an initialised modular state. Please place a `modular` block"
+  trace[Modular.Elab] s!"(name := {st.name})"
+  let (_,newSt) ← elabModularCommand cmd |>.run {} |>.run st.toModularElabState
+  modifyEnv (currModState.setState · {st with toModularState := {newSt with}})
+
+syntax (name := modular_end_command) "modular" "end" ident : command
+
+@[command_elab modular_end_command, incremental]
+def elabModularEndCommand' : CommandElab := fun stx => do
+  let `(command| modular end $n:ident) := stx
+    | throwUnsupportedSyntax
+  let currNamespace ← getCurrNamespace
+  let (modName, _) ← mkDeclName currNamespace {} n.getId
+  let st := currModState.getState (← getEnv)
+  unless st.name = modName do
+    throwError "The current modular state is `{st.name}`, cannot close state {modName}"
+  unless (Environment.findConstVal? (← getEnv) st.fullName).isSome do
+    liftTermElabM <| mkDummyDecl st.fullName --for some reason, this is necessary...
+  modifyEnv (modStates.modifyState · fun m => m.insert st.fullName st.toModularElabState)
+  modifyEnv (currModState.setState · {})
+
+-- @[command_elab modular_block, incremental]
+-- def elabModularBlock : CommandElab := fun stx => do
+  -- match stx with
+  -- | `(command| modular $cfg:optConfig $[$m]* ) => do
+    -- withExporting do
+    -- let currNamespace ← getCurrNamespace
+    -- trace[Modular.Elab] s!"{modStates.getState (← getEnv) |>.keys}"
+    -- let cfg ← elabModularSetup cfg
+    -- if let some snap := (← read).snap? then
+      -- let oldSnap? := do
+        -- let oldSnap ← snap.old?
+        -- oldSnap.val.get.toTyped? ModularBlockSnapshot
+      -- if snap.old?.isSome && oldSnap?.isNone then
+        -- snap.old?.forM (·.val.cancelRec)
+      -- let opts ← getOptions
+      -- let mut st : ModularElabState := {}
+      -- for name in cfg.imports do
+        -- let fullName := `_modular ++ name
+        -- let some modst := modStates.find? (← getEnv) fullName
+          -- | throwError "Failed to import modular mapping {name}."
+        -- st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
+      -- let mut outputs : Array (Command.State × ModularElabState) := #[]
+      -- let oldCmds? := oldSnap?.map (·.cmds)
+      -- let oldOutputs? := oldSnap?.map (·.outputs)
+      -- let mut reusedPrefix := true
+      -- for i in [:m.size] do
+        -- let cmd : Syntax := m[i]!
+        -- let oldCmd? := oldCmds?.bind (·[i]?)
+        -- let oldOutput? := oldOutputs?.bind (·[i]?)
+        -- if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
+          -- match oldOutput? with
+          -- | some (oldState, oldSt) =>
+            -- set oldState
+            -- st := oldSt
+            -- outputs := outputs.push (oldState, oldSt)
+          -- | none =>
+            -- reusedPrefix := false
+            -- let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run st
+            -- st := newMap
+            -- outputs := outputs.push ((← get), st)
+        -- else
+          -- reusedPrefix := false
+          -- let (_, newst) ← elabModularCommand cmd |>.run {} |>.run st
+          -- st := newst
+          -- outputs := outputs.push ((← get), st)
+      -- snap.new.resolve <| .ofTyped {
+        -- diagnostics := .empty
+        -- cmds := m.map (·.raw)
+        -- outputs
+        -- : ModularBlockSnapshot
+      -- }
+      -- unless cfg.name.isAnonymous do
+        -- let (name, _) ← mkDeclName currNamespace {} cfg.name
+        -- let fullName := `_modular ++ name
+        -- liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
+        -- modifyEnv fun env => modStates.insert env fullName st
+    -- else
+      -- let mut st : ModularElabState := {}
+      -- for name in cfg.imports do
+        -- let fullName := `_modular ++ name
+        -- let some modst := modStates.find? (← getEnv) fullName
+          -- | throwError "Failed to import modular mapping {name}."
+        -- st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
+      -- let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
+      -- unless cfg.name.isAnonymous do
+        -- let (name, _) ← mkDeclName currNamespace {} cfg.name
+        -- let fullName := `_modular ++ name
+        -- liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
+        -- modifyEnv fun env => modStates.insert env fullName endMap
+  -- | _ => throwUnsupportedSyntax
 
 initialize
   registerTraceClass `Modular (inherited := true)
