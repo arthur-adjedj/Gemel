@@ -31,14 +31,14 @@
 #let lam(x,A,t) = $λ (#x : #A) mapsto #t$
 #let pi(x,A,B) = $(#x : #A) -> #B$
 #let app(f,t) = $f space t$
-#set heading(numbering: "I.1")
+#set heading(numbering: "1.1")
 
-#let LeanALaCarte = text(weight:"bold","LeanExtend")
+#let LeanALaCarte = text(weight:"bold","Gemel")
 
 #align(center)[
-  #title[Internship report: Modularity in Interactive Theorem Provers]
+  #title[Modular proofs and programs in Lean]
+  Internship report \
   Arthur Adjedj\
-  Université Paris-Saclay, ENS Paris-Saclay 
 ]
 
 #let abstract_margins = (left : 0.5cm, right: 0.5cm)
@@ -54,10 +54,10 @@
 The pattern of extending definitions occurs particularly often in 
 programming language theory, type theory, and program verification,
 leading to a lot of code duplication and high maintainance burden.
-Existing approaches to this problem either require encoding datatypes as complicated expressions, obfuscating the development, or rely on meta-programming facilities which were underdeveloped in most ITPs until recently.\ 
+Existing approaches to this problem either require encoding datatypes as complicated expressions—obfuscating the development— or rely on custom intermediate representations of syntax via meta-programming facilities, which were underdeveloped in most ITPs until recently.\ 
 We develop #LeanALaCarte: a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
 
-#abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
+// #abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
 
 = Introduction
 
@@ -275,7 +275,7 @@ def Term.repr {α} [ToString α] : Term α → String
   | lam f => s!"λ {Term.repr f}"
 ```
 This however leads to a duplication of the `var` case, which in turns lead to a burden of maintenance. If, for example, the user was to change how variables are pretty-printed in the `Var.var` case, this change would have to be copy-pasted for the `Term.var` case, which would be hard to track in general.
-Instead, #LeanALaCarte introduces a new #raw("mod def", lang: "lean") syntax to allow users to reuse existing branches in a previously defined function, and only require them to fill-in the holes needed to go from a definition over one type to a definition of the same shape over an extension of said type. This syntax allows us to rewrite `Term.repr` as follows:
+Instead, #LeanALaCarte introduces a new #raw("mod def", lang: "lean") syntax to allow users to reuse existing branches in a previously defined function, and only require them to fill-in the holes needed to go from a definition over one type to a definition of the same shape over an extension of said type. This syntax allows to rewrite `Term.repr` as follows:
 ```lean
 mod def Term.repr extends Var.repr where
   extend with
@@ -284,28 +284,28 @@ mod def Term.repr extends Var.repr where
 ```
 Now, any change done to `Var.repr` would also change downstream of it for `Term.repr`. 
  
-The general elaboration process of that syntax are as follows. Given a declaration (e.g `Var.repr`), one may partially map its value into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated value to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a partial mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
+The general elaboration process of that syntax is as follows. Given a declaration \ (e.g `Var.repr`), one may partially map its body into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated body to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a partial mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
 
-In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion is handled by the system. We discuss these two complications in the following sections.
+In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion are handled by the system. We discuss these two complications in the following sections.
 
 == Extending pattern-matches
 
 Pattern-matching is a ubiquitous feature of modern functional languages, and proof assistants make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. \
-Lean diverges from the tradition. For regular users, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax too! However, this is all smoke and mirrors. Instead, Lean's  elaborates pattern-matches down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
+Lean diverges from the tradition. For users, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax. In practice, Lean's  elaborates pattern-matches down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
 ```lean
-def is_zero : Nat → Bool
-  | 0 => true
-  | n + 1 => false
+def is_var : Var α → Bool
+  | var _ => true
+  | _ => false
 ```
 The shape of the match get elaborated into an auxiliary function 
 ```lean
-is_zero.match_1 : (motive : Nat → Type) → (x : Nat) → (Unit → motive 0) → ((n : Nat) → motive n.succ) → motive x
+is_var.match_1 : (α : Type) → (motive : Var α → Sort u_1) → (x : Var α) → ((a : α) → motive (Var.var a)) → motive x 
 ```
 
 The function is then applied with the right arguments to explicit 1. the return type of the match (here called the `motive`) 2. the discriminant (here `x`) and 3. the righ-hand-side of each branch:
 ```lean
-def is_zero : Nat → Bool :=
-fun x => is_zero.match_1 (fun x => Bool) x (fun _ => true) (fun n => false)
+def is_var : (α : Type) → Var α → Bool :=
+fun x => is_var.match_1 α (fun x => Bool) x (fun a => true)
 ``` 
 
 In practice however, the pretty-printer recognises when an application has a match expression as its head, and thus prints it back to the user as a `match`. 
@@ -313,7 +313,7 @@ In practice however, the pretty-printer recognises when an application has a mat
 When it comes to extending matches, we are presented with two options. The first one consists of remarking that matches are simply encoded using recursors. As such, we may simply partially map a given matcher and ask users to fill in the holes in it. 
 Another one would be to remark that extending a match amounts to adding new branches to it such that it covers the relevant new constructors in the extended inductive type. As such, we may ask users to write down the relevant branches, in a syntax similar to how normal matches are written.
 
-The first option of asking users to fill in the proof-holes of the extended recursors that constructs a match is unreasonable, as it exposes far too much internal details. The definition of a given match can quickly become complex if it matches on multiple elements, needs to generalize some variables or contains some proofs of equality between the thing matched on and a given constructor in a branch. Extending any of this would make an unreadable mess for the users and is too detached from what a user would do had he just written this as a normal definition. \
+The first option of asking users to fill in the proof-holes of the extended recursors that constructs a match is unreasonable, as it exposes far too many internal details. The definition of a given match can quickly become complex if it matches on multiple elements, needs to generalize some variables or contains some proofs of equality between the thing matched on and a given constructor in a branch. Extending any of this would make an unreadable mess for the users and is too detached from what a user would do had he just written this as a normal definition. \
 The second option turns out to be the most ergonomic, although it makes the implementation work harder.In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher gets translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations, as seen in the previous example. 
 
 // Take the previous example of inductive extensions where `Term` extends `Var` in @ind_extension. Consider a function for printing a term of the type:
@@ -330,10 +330,10 @@ The second option turns out to be the most ergonomic, although it makes the impl
 <recursion>
 Other proof-assistants like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
 
-Because of this, directly partially mapping the value of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form: \ 
+Because of this, directly partially mapping the body of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form: \ 
 `(a₁ : A₁) → ... → (aₙ : Aₙ)  → foo a₁ ... aₙ = <foo's definition>`
 
-As such, rather than use the original value of a definition, we can instead partial map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case with the extension from `Var.repr` to `Term.repr`.
+As such, rather than use the original body of a definition, we can instead partial map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case with the extension from `Var.repr` to `Term.repr`.
 
 In particular, this allows us turn an originally non-recursive function into a recursive one if needed, as is the case with `Term.repr` extending `Var.repr`, or even change the termination measure that was originally used to adapt it to the new extended function.
 

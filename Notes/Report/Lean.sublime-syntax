@@ -5,6 +5,7 @@ name: Lean
 file_extensions:
   - lean
 scope: source.lean
+version: 2
 contexts:
   main:
     - include: comments
@@ -52,6 +53,10 @@ contexts:
           pop: true
     - match: \b(?<!\.)(if|then|else)\b
       scope: keyword.control.lean
+    - match: '(s!)(")'
+      captures:
+        2: punctuation.definition.string.begin.lean
+      push: stringInterpolated
     - match: '"'
       captures:
         0: punctuation.definition.string.begin.lean
@@ -132,3 +137,27 @@ contexts:
           pop: true
         - include: scope:source.lean.markdown
         - include: blockComment
+  stringInterpolated:
+    - meta_scope: string.quoted.double.lean
+    - match: '\\[\\"nt'']'
+      scope: constant.character.escape.lean
+    - match: '\\x[0-9A-Fa-f][0-9A-Fa-f]'
+      scope: constant.character.escape.lean
+    - match: '\\u[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'
+      scope: constant.character.escape.lean
+    - match: '\{'
+      scope: punctuation.section.interpolation.begin.lean
+      set: interpolationBody
+    - match: '"'
+      captures:
+        0: punctuation.definition.string.end.lean
+      pop: true
+  interpolationBody:
+    - clear_scopes: 1
+    - match: '\{'
+      scope: punctuation.section.interpolation.begin.lean
+      push: interpolationBody
+    - match: '\}'
+      scope: punctuation.section.interpolation.end.lean
+      set: stringInterpolated
+    - include: main
