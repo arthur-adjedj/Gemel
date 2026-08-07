@@ -12,8 +12,8 @@
 #let(theorem, lemma, example, proof, rules: thm-rules) = default-theorems("thm-group", lang: "en", thm-numbering: thm-numbering-linear)
 #show: thm-rules
 
-// #set text(size:9pt)
-#set page(numbering: "1")
+#set text(size:11.5pt)
+#set page(numbering: "1", margin: 8em)
 #set par(first-line-indent: 1.5em, justify: true)
 #set cite(form: "prose", style: "citation-style.csl",)
 #set quote(block: true)
@@ -23,7 +23,7 @@
 #let yf(body) = text(fill:purple, "YF: " + body)
 #let nt(body) = text(fill:red.lighten(20%), "NT: " + body)
 #set raw(syntaxes: "Lean.sublime-syntax")
-
+#set block(spacing: 2em)
 #let ie= emph[i.e.,]
 #let eg= emph[e.g.,]
 
@@ -31,7 +31,7 @@
 #let lam(x,A,t) = $λ (#x : #A) mapsto #t$
 #let pi(x,A,B) = $(#x : #A) -> #B$
 #let app(f,t) = $f space t$
-#set heading(numbering: "1.")
+#set heading(numbering: "I.1")
 
 #let LeanALaCarte = text(weight:"bold","LeanExtend")
 
@@ -55,7 +55,7 @@ The pattern of extending definitions occurs particularly often in
 programming language theory, type theory, and program verification,
 leading to a lot of code duplication and high maintainance burden.
 Existing approaches to this problem either require encoding datatypes as complicated expressions, obfuscating the development, or rely on meta-programming facilities which were underdeveloped in most ITPs until recently.\ 
-We develop #LeanALaCarte: a tool implemented in Lean to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
+We develop #LeanALaCarte: a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
 
 #abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
 
@@ -79,6 +79,108 @@ None of these systems, independently of whether they use encodings or the meta-p
 
 We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous datatypes and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalisation that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalisation of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalisation of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalisation of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
 
+Formal presentation of extensions
+
+This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate informations "after the fact".
+
+#aa[TODO section intro]
+#aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
+
+= Partial mappings
+
+#aa[This whole part needs to be completely rewritten. Rather than provide a technical presentation, this section should motivate the idea of having such mappings, by explaning eg that Rocq à la Carte's solution to modularity wouldn't work in Lean, and that as such, constructing modularity by relying on meta-programming is evidently the right way to go.]
+#aa[This whole thing mainly needs a leading example, and a clear introduction of what the following terms mean:
+- partial mapping
+- mapping context  ]
+
+// This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
+
+// First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
+
+#let syntax_def = [
+$"Terms" : t, f, A, B &::= 
+    x &#text[(variable)]\ &space 
+  | d &#text[(constant)]\ &space
+  | m  &#text[(metavariable)] \ &space
+  | app(f,t) &#text[(application)]\ &space 
+  | lam(x,A,t) &#text[(abstraction)]\ &space
+  | pi(x,A,B) &#text[($Pi$-type)] \ &space
+  | univ_i &#text[(universe)]
+$]
+#let modmap(Sigma : $Sigma$,Phi : $Phi$,Theta,Gamma,Delta,t1,t2,A1,A2) = $Sigma | Phi | Theta | Gamma => Delta tack.r t1 => t2 : A1 => A2$
+
+// #figure(syntax_def,caption: "Syntax of our type theory")
+// The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the partial maps.
+// 
+// We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the partial mapping in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the partially mapped term, as well as the type of both the original term and the partially mapped one. The partial mapping acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their partial mapping. Furthermore, when partially mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
+
+#let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
+#let cons(Gamma,x,A) = $Gamma,x : A$
+
+#let modmap_univ = $prooftree(
+  rule(modmap(Theta, Gamma,Delta ,univ_i,univ_i, univ_(i+1), univ_(i+1)))
+)$
+#let modmap_var = $prooftree(
+  rule(
+    modmap(Theta, Gamma,Delta ,x, x, A, A') ,
+    (x : A) in Gamma,
+    (x : A') in Delta,
+  )
+)$
+#let modmap_const = $prooftree(
+  rule(
+    modmap( wk(Delta, Theta), Gamma, Delta, d, t, A, A') ,
+    ((d : A) mapsto (Theta,t : A')) in Phi,
+  )
+)$
+#let modmap_mvar = $prooftree(
+  rule(
+    modmap(Theta, Gamma_1, Delta_1, m, m, A, A') ,
+    (m : (Gamma_2,A)) in Theta,
+    Gamma_2 subset Gamma_1,
+    Delta_2 subset Delta_1,
+    modmap(Theta,Gamma_2,Delta_2,A,A',univ_i,univ_i)
+  )
+)$
+#let modmap_app = $prooftree(
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    [$modmap(Theta_1 union Theta_2, Gamma, Delta, app(f, t), app(f', t'), B[x := t], B'[x := t'])$],
+    [$modmap(Theta_1 , Gamma , Delta, f, f', pi(x, A,B),pi(x,A',B'))$],
+    [$modmap(Theta_2, Gamma,Delta ,t,t', A, A')$]
+  )
+)$
+#let modmap_pi = $prooftree(
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    $modmap(Theta_1 union Theta_2, Gamma, Delta, pi(x, A,B),pi(x,A',B'), univ_max(i,j), univ_max(i,j))$,
+    $modmap(Theta_1,Gamma,Delta,A,A',univ_i,univ_i)$,
+    $modmap(Theta_2,(cons(Gamma,x, A)),(cons(Delta,x, A')),B,B',univ_j,univ_j))$
+))$
+#let modmap_lam = $prooftree(
+  #rule(
+    name:[$"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$],
+    $modmap(Theta_1 union Theta_2, Gamma, Delta, (lam(x, A, t)), (lam(x,A',t')), pi(x, A,B),pi(x,A',B'))$,
+    $modmap(Theta_1,Gamma,Delta,pi(x, A,B),pi(x,A',B'), univ_i, univ_i)$,
+    $modmap(Theta_2, (cons(Gamma,x, A)), (cons(Delta, x, A')), t, t' ,B, B'))$,
+))$
+#let modmapJudgementSet = [#grid(columns: 2,column-gutter: 2em)[#block(inset: 0.3em,stroke: 0.1em)[$modmap(Theta, Gamma,Delta ,t,t', A, A')$]][(In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)]
+#aa[TODO fix spacing]
+
+#rule-set(modmap_univ,modmap_var,modmap_const,modmap_mvar,modmap_app,modmap_pi,modmap_lam)
+]
+
+// #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
+
+// The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
+// #theorem[Given a mapping context $Phi$, if for each $((d : A) mapsto (Theta,t : A')) in Phi$:
+// + $Sigma | epsilon | epsilon tack.r d : A$
+// + $Sigma | Theta | epsilon tack.r t : A'$ 
+// + $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, 
+// Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
+// Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
+// #aa[TODO: actually prove this #emoji.face.woozy]
+
 = Inductive Types
 <ind_extension>
 
@@ -96,6 +198,7 @@ space space space space ...\
 space | ctor_n : accent((a_n : A_n),->) → I space accent(p,->) space accent(d_n,->) $
 
 An inductive (family of) type(s) is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurence, and a list of constructors for this type. Each constructor contain a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
+#aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
 #align(center)[
 #grid(columns: 2)[
 ```lean
@@ -105,8 +208,8 @@ inductive Nat : Type where
 ```][
 ```lean
 inductive Vec (A : Type) : Nat → Type where
-  | nil : Vec A Z
-  | cons : (n : Nat) → A → Vec A n → Vec A (S n)
+  | nil     : Vec A Z
+  | cons {n}: A → Vec A n → Vec A (S n)
 ```]
 ]
 #let Nat = `Nat`
@@ -115,19 +218,26 @@ inductive Vec (A : Type) : Nat → Type where
 #let NatRec = `Nat.rec`
 To each inductive type is associated a recursor, i.e a way to recursively eliminate a term of that type. For example, the recursor for `Nat` has the following type:\
 $NatRec : (motive : Nat → univ) → ("zero" : motive #Z) → ("succ" : (n : Nat) → motive n → motive (#S n)) → (t : Nat) → motive t$\
-The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the recursion principle for natural numbers. 
+The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the recursion principle for natural numbers. 
 
-== Extending an inductive type
+== Our approach towards extending inductive types
 
-There are many apparent ways in which an inductive type may be modified/extended, i.e by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
-Consider an inductive A of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type B with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this translation is the recursor. A recursor has the shape $"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ where for every constructor, there is a `minor`  
+#aa[Structural sentences, extend that this is our work, not just exposition, expand on the decision to talk about extending a type with new constructors. Motivating example comes too late it feels like ?]
+
+#aa[We consider ways in which users might want to extend one inductive type into another. Consider the following example of Var/Term, instantiate the translations to the specific example rather than be so general.]
+#aa[Make it much more obvious that #LeanALaCarte can really only manage adding new ctors]
+
+One can easily imagine wanting to extend or modify a specific inductive type in a few different, e.g by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
+Consider an inductive A of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type B with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this translation is the recursor. A recursor has the shape \ 
+$"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ \ 
+where for every constructor, there is a `minor`  
 As such, we can map this recursor to $"B.rec"$ by simply mapping all the arguments straightforwardly, and leaving a metavariable hole for the minor of the new constructor:
 
 $\
 ⟦"A.rec" accent(p,->) motive accent(minor,->) space accent(i,->) space a⟧ ::= "B.rec" accent(⟦p⟧,->) space ⟦motive⟧ space accent(⟦minor⟧,->) space ?m space accent(⟦i⟧,->) space ⟦a⟧$
 
 Our framework, provides a new Lean command which, given an inductive and new constructors, constructs another inductive type which extends the original one with these new constructors, adding the relevant mappings between from the first to the second:
-
+#aa[Make it much more explicit that the `inductive ... extends ...` is new syntax we add, not the default]
 ```lean
 inductive Var (α : Type) where
   | var : α → Var α
@@ -137,41 +247,51 @@ inductive Term α extends Var α where
   | app : Term α → Term α → Term α
 ``` 
 
-Additionally to the type, constructors and recursor that are primitively added by Lean, the system also generates lots of additional constructions that need to be mapped between the two types carefully, namely, given an inductive type `Foo`, Lean constructs the following list of auxiliary declarations, which each need get translated with particular care in #LeanALaCarte:
-- `Foo.recOn`: an alternative shape for the recursor
-- `Foo.casesOn`: a recursor with no recursive hypotheses
-- `Foo.CtorIdx`: a function mapping each recursor to a respective natural number
-- `Foo.NoConfusion`: helper function for trivially proving inequality of terms with different constructors on each side  
-- `Foo.below`/`Foo.brecOn`: a recursor for "course-of-value" recursion, i.e recursion where the induction hypothesis applies to any strict subterm, a generalisation of the strong recursion principle for natural numbers. Useful for translating syntactically recursive functions into structurally recursive ones (see @recursion)   
-- `Foo.SizeOf`: helper function that maps each inductive term to a size, useful for proving the termination of a well-founded recursive function over that type (see @recursion) 
-- `Foo.ctor.inj`: injectivity lemma for each constructor
+Additionally to the type, constructors and recursor that are primitively added by Lean, the system also generates lots of additional constructions 
+// that need to be mapped between the two types carefully, namely, given an inductive type `Foo`, Lean constructs the following list of auxiliary declarations, which each need get translated with particular care in #LeanALaCarte:
+// - `Foo.recOn`: an alternative shape for the recursor
+// - `Foo.casesOn`: a recursor with no recursive hypotheses
+// - `Foo.CtorIdx`: a function mapping each recursor to a respective natural number
+// - `Foo.NoConfusion`: helper function for trivially proving inequality of terms with different constructors on each side  
+// - `Foo.below`/`Foo.brecOn`: a recursor for "course-of-value" recursion, i.e recursion where the induction hypothesis applies to any strict subterm, a generalisation of the strong recursion principle for natural numbers. Useful for translating syntactically recursive functions into structurally recursive ones (see @recursion)   
+// - `Foo.SizeOf`: helper function that maps each inductive term to a size, useful for proving the termination of a well-founded recursive function over that type (see @recursion) 
+// - `Foo.ctor.inj`: injectivity lemma for each constructor
 
 = Definition extensions
 
-Our framework now allows for inductive types to be extended into ones with additional constructors. we now look into how declarations (i.e definitions and theorems) can be partially mapped correctly. 
-The initial idea is simple: 
-- take a given declaration
-- partially map its term
-- ask the user to fill-in the generated holes
-- add the newly completed declaration to the environment
-- map the new declaration to the old one
+Our framework now allows for inductive types to be extended into ones with additional constructors. we now look into how declarations (i.e definitions and theorems) can be partially mapped correctly. \
+Going back to the previous example of `Term` extending `Var`, consider a function `Var.repr`, mapping a term of type `Var α` to a string:
 
-However, all of this turns out to quickly become complex, mainly because the way lean declarations are elaborated is in itself very complex. This can be clearly observed by looking at how much a user-written declaration differs from what it ends up being elaborated to. #aa[TODO example that's ugly but not too much ?].
-Two big reasons why the elaboration is so complex are respectively how Lean handles recursion and pattern-matching.
-#aa[Mention that the holes can be solved in the same way tactic holes are solved.]
+```lean
+def Var.repr {α} [ToString α] : Var α → String
+  | var x => s!"#{x}"
+```
 
-== Recursive functions
-<recursion>
-Other proof-assistants like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
+Currently, a user would need to redo the `var` case in order to define a `Term.repr` function, e.g as follows:
+```lean
+def Term.repr {α} [ToString α] : Term α → String
+  | var x => s!"#{x}"
+  | app f x => s!"{Term.repr f} {Term.repr x}"
+  | lam f => s!"λ {Term.repr f}"
+```
+This however leads to a duplication of the `var` case, which in turns lead to a burden of maintenance. If, for example, the user was to change how variables are pretty-printed in the `Var.var` case, this change would have to be copy-pasted for the `Term.var` case, which would be hard to track in general.
+Instead, #LeanALaCarte introduces a new #raw("mod def", lang: "lean") syntax to allow users to reuse existing branches in a previously defined function, and only require them to fill-in the holes needed to go from a definition over one type to a definition of the same shape over an extension of said type. This syntax allows us to rewrite `Term.repr` as follows:
+```lean
+mod def Term.repr extends Var.repr where
+  extend with
+  | app f x => s!"{Term.repr f} {Term.repr x}"
+  | lam f => s!"λ {Term.repr f}"
+```
+Now, any change done to `Var.repr` would also change downstream of it for `Term.repr`. 
+ 
+The general elaboration process of that syntax are as follows. Given a declaration (e.g `Var.repr`), one may partially map its value into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated value to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a partial mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
 
-Because of this, directly partially mapping the value of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form 
-`
-(a_1 -> A_1) -> ... -> (a_n -> A_n)  -> foo a_1 ... a_n = <foo's original definition>`
-As such, rather than use the original value of a definition, we can instead partial map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. In particular, this allows us turn an originally non-recursive function into a recursive one if needed (e.g `Term.repr` example in the next section), or even change the termination measure that was originally used to adapt it to the new extended function.
+In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion is handled by the system. We discuss these two complications in the following sections.
 
 == Extending pattern-matches
 
-Pattern-matching is a ubiquitous feature of modern functional languages, and proof assistants make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. Lean however does diverge from the tradition. For regular users, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax too! However, this is all smoke and mirrors. Instead, Lean's  elaborates pattern-matches down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
+Pattern-matching is a ubiquitous feature of modern functional languages, and proof assistants make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. \
+Lean diverges from the tradition. For regular users, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax too! However, this is all smoke and mirrors. Instead, Lean's  elaborates pattern-matches down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
 ```lean
 def is_zero : Nat → Bool
   | 0 => true
@@ -179,7 +299,7 @@ def is_zero : Nat → Bool
 ```
 The shape of the match get elaborated into an auxiliary function 
 ```lean
-is_zero.match_1 : (motive : Nat → Sort u_1) → (x : Nat) → (Unit → motive 0) → ((n : Nat) → motive n.succ) → motive x
+is_zero.match_1 : (motive : Nat → Type) → (x : Nat) → (Unit → motive 0) → ((n : Nat) → motive n.succ) → motive x
 ```
 
 The function is then applied with the right arguments to explicit 1. the return type of the match (here called the `motive`) 2. the discriminant (here `x`) and 3. the righ-hand-side of each branch:
@@ -190,50 +310,66 @@ fun x => is_zero.match_1 (fun x => Bool) x (fun _ => true) (fun n => false)
 
 In practice however, the pretty-printer recognises when an application has a match expression as its head, and thus prints it back to the user as a `match`. 
 
-When it comes to extending matches, we are now presented with two options: 
-- Matches are simply encoded using recursors, we may simply partially map a given matcher and ask users to fill in the holes in it. 
-- Extending matches amounts to adding new branches to it such that it covers the relevant constructors in the extended inductive type. As such, we may ask users to write down the relevant branches, in a syntax similar to how normal matches are written.
+When it comes to extending matches, we are presented with two options. The first one consists of remarking that matches are simply encoded using recursors. As such, we may simply partially map a given matcher and ask users to fill in the holes in it. 
+Another one would be to remark that extending a match amounts to adding new branches to it such that it covers the relevant new constructors in the extended inductive type. As such, we may ask users to write down the relevant branches, in a syntax similar to how normal matches are written.
 
-The second option turns out to be the most ergonomic, although it makes the implementation harder. In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher  is translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations. Take the previous example of inductive extensions where `Term` extends `Var` in @ind_extension. Consider a function for printing a term of the type:
-```lean
-def Var.repr {α} [ToString α] : Var α → String
-  | var x => s!"#{x}"
-```
-We may now extend this function for `Term` as such:
-```lean
-mod def Term.repr extends Var.repr where
-  extend match_1 with
-  | app f x => s!"{Term.repr f} {Term.repr x}"
-  | lam f => s!"λ {Term.repr f}"
-```
+The first option of asking users to fill in the proof-holes of the extended recursors that constructs a match is unreasonable, as it exposes far too much internal details. The definition of a given match can quickly become complex if it matches on multiple elements, needs to generalize some variables or contains some proofs of equality between the thing matched on and a given constructor in a branch. Extending any of this would make an unreadable mess for the users and is too detached from what a user would do had he just written this as a normal definition. \
+The second option turns out to be the most ergonomic, although it makes the implementation work harder.In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher gets translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations, as seen in the previous example. 
 
-In practice having matches be handled specially provides a clear distinction between the holes generated for matches and those generated by explicit uses of recursors, which usually only appear in proof terms generated by tactic calls such as `induction` and `cases`. This in essence means our syntax for modular definitions offers a clear separation of concerns between proof holes, solved by tactics, and non-proof holes, solved by completing match branches.
+// Take the previous example of inductive extensions where `Term` extends `Var` in @ind_extension. Consider a function for printing a term of the type:
+// 
+// We extend Lean with a new command `mod def` which allows one to extend a previous function by expliciting the missing branches in its pattern-matches. Such a function for `Term` looks like the following:
+// ```lean
+// mod def Term.repr extends Var.repr where
+  // extend match_1 with
+  // | app f x => s!"{Term.repr f} {Term.repr x}"
+  // | lam f => s!"λ {Term.repr f}"
+// ```
+ 
+== Extending recursive functions
+<recursion>
+Other proof-assistants like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
+
+Because of this, directly partially mapping the value of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form: \ 
+`(a₁ : A₁) → ... → (aₙ : Aₙ)  → foo a₁ ... aₙ = <foo's definition>`
+
+As such, rather than use the original value of a definition, we can instead partial map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case with the extension from `Var.repr` to `Term.repr`.
+
+In particular, this allows us turn an originally non-recursive function into a recursive one if needed, as is the case with `Term.repr` extending `Var.repr`, or even change the termination measure that was originally used to adapt it to the new extended function.
+
+== Putting it all together
+
+In practice, being able to change the proof of termination of an extended function compared to the original provides us with much more modularity, and is a feature we have not seen in any other project of the sort. \
+Furthermore, having matches be handled specially provides a clear distinction between the holes generated for matches and those generated by explicit uses of recursors, which usually only appear in proof terms generated by tactic calls such as `induction` and `cases`. branches. 
+The complete syntax for #raw("mod def", lang: "lean") ends up as the following:
 
 #box(clip:true)[
 ```lean
   mod def <new function name> extends <old function name> where
-    <match extensions>
+    <match extension>
   finally
     <tactics>
   <termination-information>
 ```]
 
+This in essence means our syntax for modular definitions offers a clear separation of concerns between proof holes, solved by tactics, and non-proof holes, solved by completing match 
 This sort of distinction  is not new. Indeed, `where finally` is already a feature for definitions in Lean, and can be used to fill-in proof holes after the fact:
+#aa[Perhaps get rid of this example since it's not really relevant for the rest of the paper.]
 ```lean
 def Vec.tl (v : Vec α (S n)) : Vec α n :=
   match h : S n, v with
     | Z, nil => nomatch h
-    | S k, cons _ _ tl => (show n = k from ?_) ▸ tl 
-                        --rewrites the type of `tl` from `Vec α k` to `Vec α n`
+    | S k, cons _ tl => (show n = k from ?_) ▸ tl 
+                  --rewrites the type of `tl` from `Vec α k` to `Vec α n`
   where
     finally
     injection h
 ``` 
 Similarly, Rocq's `Equations` (@Sozeau2019) syntax provide an "Obligations" system which serve a similar purpose.
-We thus adopt a similar syntax to normal Lean `def`, by asking for matchers to be completed first, before asking proof holes to be solved in a `where finally` block. Termination information such as `termination_by` or `decreasing_by` can be additionally provided if needed to help with producing a well-founded recursive function. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case, for example, with the extension from `Var.repr` to `Term.repr`
+We thus adopt a similar syntax to Lean's normal #raw("def", lang: "lean") declarations, by asking for matchers to be completed first, before asking proof holes to be solved in a #raw("finally", lang: "lean") block. Termination information such as #raw("termination_by", lang: "lean") or #raw("decreasing_by", lang: "lean") can be additionally provided if needed to help with producing a well-founded recursive function. 
 
 = Making extensions modular
-The current set-up allows one to extend previous definitions iteratively, though one may argue these extensions are not strictly "modular". In particular, one cannot simply "apply" an extension to adeclaration, and instead needs to ground his extensions on base declarations. This, in particular, means one isn't able to compose different extensions. Take the Barendregt lambda-cube (@Barendregt1991) for exemple:
+The current set-up allows one to extend previous definitions iteratively, though one may argue these extensions are not strictly "modular". In particular, one cannot simply "apply" an extension to adeclaration, and instead needs to ground his extensions on base declarations. This, in particular, means one isn't able to compose different extensions. Take the example of the Barendregt lambda-cube (@Barendregt1991):
 
 // https://q.uiver.app/#r=typst&q=WzAsOCxbMCw0LCJcXGxhbWJkYSJdLFswLDEsIlxcbGFtYmRhMiJdLFszLDQsIlxcbGFtYmRhIFAiXSxbMSwzLCJcXGxhbWJkYVxcb21lZ2EiXSxbMSwwLCJcXGxhbWJkYVxcb21lZ2EiXSxbNCwwLCJcXGxhbWJkYSBDIl0sWzQsMywiXFxsYW1iZGEgUFxcb21lZ2EiXSxbMywxLCJcXGxhbWJkYSBQMiJdLFswLDFdLFswLDJdLFswLDNdLFszLDRdLFsxLDRdLFs0LDVdLFsyLDZdLFszLDZdLFs2LDVdLFsyLDddLFsxLDddLFs3LDVdXQ==
 #align(center, diagram(spacing: 1em,{
@@ -263,10 +399,8 @@ The various vertices of the cube can be seen as various extensions of the initia
 
 == Inductive modularity
 
-
-
 == Definition modularity
-#aa[Empty for now, no work has been done here, write down your ideas]
+
 
 = Case study: extending STLC
 #let extCell(label) = box(
@@ -296,12 +430,12 @@ In order to iterate on this implementation and ensure its usability, we studied 
 #align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
 inductive Ty : Type where
 | base : Ty
-| arrow : Ty -> Ty -> Ty
+| arrow : Ty → Ty → Ty
 ```][```lean
 inductive Term where
-| var : Nat -> Term
-| app : Term -> Term -> Term
-| lam : Ty -> Term -> Term
+| var : Nat → Term
+| app : Term → Term → Term
+| lam : Ty → Term → Term
 ```]]]
 
 We extend this base definition to add natural numbers:
