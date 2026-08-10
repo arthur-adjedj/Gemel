@@ -53,6 +53,8 @@ contexts:
           pop: true
     - match: \b(?<!\.)(if|then|else)\b
       scope: keyword.control.lean
+    - match: '<[^>\n]*>'
+      scope: text.lean
     - match: '(s!)(")'
       captures:
         2: punctuation.definition.string.begin.lean
