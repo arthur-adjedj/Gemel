@@ -13,8 +13,8 @@ theorem A.sizeOf_eq : A.sizeOf = A.sizeOf := by
 def A.diag : A → A → Prop
   | .a x, .a y => x.diag y
 
-modular (name := `B)
-  inductive B extends A where
+modular testB
+  mod inductive B extends A where
     | b : B
 
   mod def B.sizeOf extends A.sizeOf where
@@ -30,9 +30,10 @@ modular (name := `B)
       | .b, .b => True
       | .a _,.b => False
       | .b, .a _ => False
+modular end testB
 
-modular (name := `C)
-  inductive C extends A where
+modular testC
+  mod inductive C extends A where
     | c : C → C → C
 
   mod def C.sizeOf extends A.sizeOf where
@@ -48,15 +49,16 @@ modular (name := `C)
       | .c x₁ y₁, .c x₂ y₂ => x₁.diag x₂ ∧ y₁.diag y₂
       | .a _, .c .. => False
       | .c ..,.a _ => False
+modular end testC
 
-modular (imports := #[`B,`C])
+modular testD (imports := testB, testC)
 
-  inductive D extends B,C where
+  mod inductive D extends B,C where
 
   mod def D.sizeOf extends B.sizeOf, C.sizeOf
 
   mod def D.sizeOf_eq extends B.sizeOf_eq, C.sizeOf_eq
 
   mod def D.diag extends B.diag, C.diag where
-    matcher match_1 with
+    matcher match_2 with
       | _,_ => False

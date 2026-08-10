@@ -186,66 +186,6 @@ def elabExtendedCtors (newShortIndName newIndName : Name) (newLevelParams : List
             type := type
           }
 
-syntax (name := modular_inductive) "inductive" ident (ppSpace bracketedBinder)* "extends" term,+ ("where" ctor*)? :  modular_command
-def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM (List ExtendedInd) := do
-  match stx with
-  | `(modular_command|inductive $i $[$params]* extends $inds,* $[where $ctors*]?) => do
-    Term.withAutoBoundImplicit do
-    Term.elabBinders params fun declaredParams => do
-    let indExprs ← inds.getElems.mapM fun indStx => do
-      let indExpr ← Term.elabTerm indStx none
-      instantiateMVars indExpr
-    let mut indNames : Array Name := #[]
-    for indExpr in indExprs do
-      let .const indName _ := indExpr.getAppFn
-        | throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
-      indNames := indNames.push indName.eraseMacroScopes
-    let indVals ← indNames.mapM getConstInfoInduct
-    let {levelParams, type := origType, numParams := baseNumParams,  ..} := indVals[0]!
-    unless indVals[1:].all (·.levelParams == levelParams) do
-      throwError "Different level params between inductives being extended"
-    -- TODO check that the modmapped type of each indval is DefEq
-    unless declaredParams.size <= baseNumParams do
-      throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
-    if declaredParams.size > 0 then
-      let firstArgs := indExprs[0]!.getAppArgs
-      unless firstArgs.size >= declaredParams.size do
-        throwError m!"Expected at least {declaredParams.size} parameter argument(s) in `extends` target"
-      for i in [:declaredParams.size] do
-        unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
-          throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
-    let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
-    let (type,_) ← modMap origType |>.run {} |>.run {map := map}
-    unless !type.hasMVar do
-    -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
-      throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
-    let expandedDeclId ← withRef? i do
-      Term.expandDeclId (← getCurrNamespace) indVals[0]!.levelParams i {}
-    let newShortIndName := expandedDeclId.shortName
-    let newIndName := expandedDeclId.declName
-    checkNotAlreadyDeclared newIndName
-    Term.withDeclName newIndName do
-    Term.withoutSavingRecAppSyntax do
-    let ctors := ctors.getD #[]
-    let (numParams, addedCtors) ←
-      if declaredParams.size == 0 && baseNumParams > 0 then
-        try
-          pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
-        catch _ =>
-          pure (0, (← elabExtendedCtors newShortIndName newIndName levelParams type 0 ctors))
-      else
-        pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
-    let auxInds := indNames.mapIdx fun i indName =>
-        let auxIndName := newIndName.str s!"Aux_{i+1}"
-        let addIndExt := IndExtension.addInd { indName }
-        { newIndName := auxIndName, numParams, levelParams, origType, type, extension :=  addIndExt }
-    let addCtorsExt := IndExtension.addCtors { lparams := levelParams
-                                               indType := type
-                                               addedCtors := addedCtors }
-    let realInd := { newIndName, numParams, levelParams, origType, type, extension :=  addCtorsExt }
-    return auxInds.toList ++ [realInd]
-  | _ => throwUnsupportedSyntax
-
 def mkSizeOfName (name : Name) : Name :=
   name ++ `_sizeOf_inst
 
@@ -489,6 +429,66 @@ meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor)
   trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
   return extendedInductive.ctors
 
+syntax (name := modular_inductive) "mod " "inductive " ident (ppSpace bracketedBinder)* "extends" term,+ ("where" ctor*)? :  modular_command
+
+def elabExtendedInd (map : ModularMap) (stx : Syntax) : TermElabM (List ExtendedInd) := do
+  let `(modular_command|mod inductive $i $[$params]* extends $inds,* $[where $ctors*]?) := stx
+    | throwUnsupportedSyntax
+    Term.withAutoBoundImplicit do
+    Term.elabBinders params fun declaredParams => do
+    let indExprs ← inds.getElems.mapM fun indStx => do
+      let indExpr ← Term.elabTerm indStx none
+      instantiateMVars indExpr
+    let mut indNames : Array Name := #[]
+    for indExpr in indExprs do
+      let .const indName _ := indExpr.getAppFn
+        | throwError m!"Expected an application of an inductive constant in `extends`, got{indentExpr indExpr}"
+      indNames := indNames.push indName.eraseMacroScopes
+    let indVals ← indNames.mapM getConstInfoInduct
+    let {levelParams, type := origType, numParams := baseNumParams,  ..} := indVals[0]!
+    unless indVals[1:].all (·.levelParams == levelParams) do
+      throwError "Different level params between inductives being extended"
+    -- TODO check that the modmapped type of each indval is DefEq
+    unless declaredParams.size <= baseNumParams do
+      throwError m!"Expected at most {baseNumParams} parameter binder(s), got {declaredParams.size}"
+    if declaredParams.size > 0 then
+      let firstArgs := indExprs[0]!.getAppArgs
+      unless firstArgs.size >= declaredParams.size do
+        throwError m!"Expected at least {declaredParams.size} parameter argument(s) in `extends` target"
+      for i in [:declaredParams.size] do
+        unless (← isDefEq firstArgs[i]! declaredParams[i]!) do
+          throwError m!"Parameter binder mismatch in `extends` target at position {i+1}"
+    let defaultNumParams := if declaredParams.size == 0 then baseNumParams else declaredParams.size
+    let (type,_) ← modMap origType |>.run {} |>.run {map := map}
+    unless !type.hasMVar do
+    -- TODO this inductive translation is partial and requires the user to complete holes, this is not implemented yet.
+      throwError "Failed to construct the type of the extended inductive: the translation generated holes. TODO expose a way to fill these holes."
+    let expandedDeclId ← withRef? i do
+      Term.expandDeclId (← getCurrNamespace) indVals[0]!.levelParams i {}
+    let newShortIndName := expandedDeclId.shortName
+    let newIndName := expandedDeclId.declName
+    checkNotAlreadyDeclared newIndName
+    Term.withDeclName newIndName do
+    Term.withoutSavingRecAppSyntax do
+    let ctors := ctors.getD #[]
+    let (numParams, addedCtors) ←
+      if declaredParams.size == 0 && baseNumParams > 0 then
+        try
+          pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
+        catch _ =>
+          pure (0, (← elabExtendedCtors newShortIndName newIndName levelParams type 0 ctors))
+      else
+        pure (defaultNumParams, (← elabExtendedCtors newShortIndName newIndName levelParams type defaultNumParams ctors))
+    let auxInds := indNames.mapIdx fun i indName =>
+        let auxIndName := newIndName.str s!"Aux_{i+1}"
+        let addIndExt := IndExtension.addInd { indName }
+        { newIndName := auxIndName, numParams, levelParams, origType, type, extension :=  addIndExt }
+    let addCtorsExt := IndExtension.addCtors { lparams := levelParams
+                                               indType := type
+                                               addedCtors := addedCtors }
+    let realInd := { newIndName, numParams, levelParams, origType, type, extension :=  addCtorsExt }
+    return auxInds.toList ++ [realInd]
+
 -- TODO add `addTermInfo'` for inductive/ctor names
 @[modular_elab modular_inductive, incremental]
 meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
@@ -501,61 +501,60 @@ meta def elabExtendedInductive : ModularElab := fun stx => liftModularM do
 
 syntax bracketedExplicitBinder := "(" withoutPosition(binderIdent ppSpace ": " term) ")"
 
-syntax (name := modular_addInd_ext) "inductive" "extension" ident " extends " ident: modular_command
+-- syntax (name := modular_addInd_ext) "mod " "inductive " ident " extends " ident: modular_command
+--
+-- @[modular_elab modular_addInd_ext, incremental]
+-- meta def elabAddIndExt : ModularElab
+  -- | `(modular_command|mod inductive $F extends $ind) => liftModularM do
+    -- let indName ← resolveGlobalConstNoOverload ind
+    -- let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
+    -- if (← getIndFunctors).contains declName then
+      -- throwError "Functor {declName} already declared"
+    -- modifyIndFunctors (NameMap.insert · declName (.addInd { indName := indName }))
+  -- | _ => throwUnsupportedSyntax
 
-@[modular_elab modular_addInd_ext, incremental]
-meta def elabAddIndExt : ModularElab
-  | `(modular_command|inductive extension $F extends $ind) => liftModularM do
-    let indName ← resolveGlobalConstNoOverload ind
-    let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
-    if (← getIndFunctors).contains declName then
-      throwError "Functor {declName} already declared"
-    modifyIndFunctors (NameMap.insert · declName (.addInd { indName := indName }))
-  | _ => throwUnsupportedSyntax
-
-syntax "inductive " "extension " ident binderIdent ("where" ctor*): modular_command
-
-syntax (name := modular_indctive_def) "inductive" ident ":=" ident ws ("$" ws ident)+ : modular_command
-@[modular_elab modular_indctive_def, incremental]
-meta def elabModInd : ModularElab := fun stx => match stx with
-  | `(modular_command|inductive $ind := $F1 $[$ $i]*) => liftModularM do
-    let (newIndName, _) ← mkDeclName (← getCurrNamespace) {} ind.getId
-    let some oldIndStx := i.back?
-      | throwError "Ill-formed functor application. Expected app of the form `F1 $ ... $ Fn $ I` where `Fi` are feature functors, and `I` an inductive type"
-    let oldIndName ← realizeGlobalConstNoOverload oldIndStx
-    let functorsIdents := i[:i.size-1].toArray.reverse.push F1
-    let functorNames ← functorsIdents.mapM fun F => do
-      let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
-      return declName
-    let functorMap ← getIndFunctors
-    let functors ← functorNames.mapM fun F => do
-      let some indExt := functorMap.find? F
-        | throwError "Unknown feature functor {F}"
-      pure indExt
-    let newIndNames :=
-      functorNames.mapIdx fun idx _ =>
-        if idx = functorNames.size-1 then
-          newIndName
-        else
-          newIndName.append (.mkSimple s!"_aux{idx}")
-    trace[Modular.Elab] "indNames : {newIndNames}"
-    let oldInd ← getConstInfoInduct oldIndName
-    let mut oldCtors ← oldInd.ctors.mapM fun ctorName => do
-      let ctor ← getConstInfoCtor ctorName
-      let ctorType := ctor.type
-      pure {
-        name := ctor.name.replacePrefix ctor.induct .anonymous
-        type := ctorType : Constructor
-      }
-    for idx in [:newIndNames.size], F in functors do
-      let oldIndName := if idx = 0 then oldIndName else newIndNames[idx-1]!
-      let oldInd ← getConstInfoInduct oldIndName
-      let extendedInd := { newIndName := newIndNames[idx]!,
-                           numParams := oldInd.numParams,
-                           levelParams := oldInd.levelParams,
-                           origType := oldInd.type,
-                           type := (← modMap oldInd.type),
-                           «extension» := F }
-      oldCtors ← elabExtension oldIndName oldCtors extendedInd stx
-
-  | _ => throwUnsupportedSyntax
+-- syntax "mod " "inductive " ident binderIdent ("where" ctor*): modular_command
+--
+-- syntax (name := modular_indctive_def) "mod " "inductive " ident ":=" ident ws ("$" ws ident)+ : modular_command
+-- @[modular_elab modular_indctive_def, incremental]
+-- meta def elabModInd : ModularElab := fun stx => liftModularM do
+  -- let `(modular_command|mod inductive $ind := $F1 $[$ $i]*) := stx
+      -- | throwUnsupportedSyntax
+    -- let (newIndName, _) ← mkDeclName (← getCurrNamespace) {} ind.getId
+    -- let some oldIndStx := i.back?
+      -- | throwError "Ill-formed functor application. Expected app of the form `F1 $ ... $ Fn $ I` where `Fi` are feature functors, and `I` an inductive type"
+    -- let oldIndName ← realizeGlobalConstNoOverload oldIndStx
+    -- let functorsIdents := i[:i.size-1].toArray.reverse.push F1
+    -- let functorNames ← functorsIdents.mapM fun F => do
+      -- let (declName, _) ← mkDeclName (← getCurrNamespace) {} F.getId
+      -- return declName
+    -- let functorMap ← getIndFunctors
+    -- let functors ← functorNames.mapM fun F => do
+      -- let some indExt := functorMap.find? F
+        -- | throwError "Unknown feature functor {F}"
+      -- pure indExt
+    -- let newIndNames :=
+      -- functorNames.mapIdx fun idx _ =>
+        -- if idx = functorNames.size-1 then
+          -- newIndName
+        -- else
+          -- newIndName.append (.mkSimple s!"_aux{idx}")
+    -- trace[Modular.Elab] "indNames : {newIndNames}"
+    -- let oldInd ← getConstInfoInduct oldIndName
+    -- let mut oldCtors ← oldInd.ctors.mapM fun ctorName => do
+      -- let ctor ← getConstInfoCtor ctorName
+      -- let ctorType := ctor.type
+      -- pure {
+        -- name := ctor.name.replacePrefix ctor.induct .anonymous
+        -- type := ctorType : Constructor
+      -- }
+    -- for idx in [:newIndNames.size], F in functors do
+      -- let oldIndName := if idx = 0 then oldIndName else newIndNames[idx-1]!
+      -- let oldInd ← getConstInfoInduct oldIndName
+      -- let extendedInd := { newIndName := newIndNames[idx]!,
+                          --  numParams := oldInd.numParams,
+                          --  levelParams := oldInd.levelParams,
+                          --  origType := oldInd.type,
+                          --  type := (← modMap oldInd.type),
+                          --  «extension» := F }
+      -- oldCtors ← elabExtension oldIndName oldCtors extendedInd stx
