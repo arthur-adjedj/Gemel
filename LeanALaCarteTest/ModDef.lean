@@ -67,11 +67,11 @@ modular natt
       | .succ' x => Natt.add n x |>.succ'
 
   mod def Natt.add'' extends Nat.add' where
-    matcher match_1 with
+    extend match_1 with
       | Natt.succ' n => fun k => (Natt.add'' n k).succ'
 
   mod def Natt.add' extends Nat.add where
-    matcher match_1 with
+    extend match_1 with
       | n, Natt.succ' k => (Natt.add' n k).succ'
   termination_by structural _ x => x
 modular end natt
@@ -81,7 +81,7 @@ modular vecc
     | cons'{n} : α → Vecc α n → Vecc α n.succ
 
   mod def Vecc.append extends Vec.append where
-    matcher match_1 with
+    extend match_1 with
       | Nat.succ _,Vecc.cons' hd tl => Vecc.cons' hd (Vecc.append tl v₂)
 
 /--

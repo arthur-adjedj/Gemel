@@ -107,7 +107,7 @@ modular natext
   mod def VarNatExt.Subst.id extends Var.Subst.id
 
   mod def VarNatExt.subst extends Var.subst where
-    matcher match_1 s with
+    extend match_1 s with
       | .const a => .const a
       | .plus a b => .plus (.subst s a) (.subst s b)
 
@@ -140,7 +140,7 @@ modular lam
     | app : Term Γ (.arr A B) → Term Γ A → Term Γ B
 
   mod def Term.wk extends NatExt.wk where
-    matcher match_1 with
+    extend match_1 with
       | _, .lam f => .lam (Term.wk (Ren.ext R _) f)
       | _, .app a b => .app (Term.wk R a) (Term.wk R b)
 
@@ -173,7 +173,7 @@ modular lam
     -- | _,.tail h => .var h
 --
   -- mod def Term.subst extends NatExt.subst where
-    -- matcher match_1 with
+    -- extend match_1 with
       -- | _, .lam f => .lam (Term.subst (Term.subst_ext s _) f)
       -- | _, .app a b => .app (Term.subst s a) (Term.subst s b)
 --

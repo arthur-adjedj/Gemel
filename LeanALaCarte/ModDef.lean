@@ -150,7 +150,7 @@ def addFinalMappings (stx : Syntax) (mapHeaders : Array MappedHeader) : ModularM
       addEqnMappings cinfo.name newName
 
 def modular_where_match_clause := leading_parser
-  "matcher" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
+  "extend" >> Term.ident >> many Term.binderIdent >> "with " >> many (checkColGt >> Term.matchAlt)
 
 syntax (name := modular_mod_def)
   declModifiers "mod" ws "def" ident "extends" (ident),+ ("where " colGe (ppLine modular_where_match_clause)* ("finally " tacticSeqIndentGt)? )?  Termination.suffix : modular_command
