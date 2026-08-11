@@ -187,20 +187,20 @@ $]
 We hereon make use of our system of partial maps to provide users with ways to modularly extend previously defined programs and formalisations. From a user perspective, a Lean program mainly consists of defining new inductive types, definitions and theorems. This section focuses on how #LeanALaCarte allows users to extend inductive definitions through addition of new constructors. 
 
 == What is an inductive type
-With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
-First, let us look at the shape of an inductive type. Inductive types are shaped as follows:
+// With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
+First, let us look at what an inductive type is. We will not focus on the semantic meaning of inductive types so much as their syntax here, since what we care about is exposing new syntax to users. Inductive types are shaped as follows:
 
 #let ctor = $bold("ctor")$
 #let newctor = $bold("newctor")$
-#let motive = $bold("P")$
+#let motive = $bold("motive")$
 #let minor = $bold("minor")$
 $bold("inductive") "Ind"  accent((p : P),->) : accent((i : I),->) -> univ bold("where")\
 space | ctor_1 : accent((a_1 : A_1),->) → I space accent(p,->) space  accent(d_1,->) \
 space space space space ...\
 space | ctor_n : accent((a_n : A_n),->) → I space accent(p,->) space accent(d_n,->) $
 
-An inductive (family of) type(s) is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurence, and a list of constructors for this type. Each constructor contain a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
-#aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
+An inductive (family of) type(s) is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
+// #aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
 #align(center)[
 #grid(columns: 2)[
 ```lean
@@ -215,36 +215,59 @@ inductive Vec (A : Type) : Nat → Type where
 ```]
 ]
 #let Nat = `Nat`
+#let Vec = `Vec`
 #let Z   = `Z`
 #let S   = `S`
 #let NatRec = `Nat.rec`
+
+`Nat` is an inductive type with no parameters and no indices, as well as two constructors `Z` and #S, the first one containing no field and the second containing one recursive occurence of #Nat as its sole field. In comparison, #Vec is an inductive type which has one parameter `A`, is indexed by a natural number, and has two constructors. The former has no field and instantiate its index at 0, the second has 3 fields with one recursive one. `Vec A n` can be interpreted as the type of lists of `A` of size `n`.
+
 To each inductive type is associated a recursor, i.e a way to recursively eliminate a term of that type. For example, the recursor for `Nat` has the following type:\
 $NatRec : (motive : Nat → univ) → ("zero" : motive #Z) → ("succ" : (n : Nat) → motive n → motive (#S n)) → (t : Nat) → motive t$\
 The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the recursion principle for natural numbers. 
 
+#aa[Perhaps explain the semantics of inductive types as least fixed-point of a given functor, and in the next section why the fact that one inductive extends the other is semantically trivial ?]
+// Semantically speaking, an inductive type can be seen as the least-fixed point of a (strictly positive) functor. For example, the definition of `Nat` can be interpreted as the least-fixed point of the functor `FNat A := 1 + A`. This is a useful insight for justifying why 
+
 == Our approach towards extending inductive types
 
-#aa[Structural sentences, extend that this is our work, not just exposition, expand on the decision to talk about extending a type with new constructors. Motivating example comes too late it feels like ?]
+// #aa[Structural sentences, extend that this is our work, not just exposition, expand on the decision to talk about extending a type with new constructors. Motivating example comes too late it feels like ?]
+// 
+// #aa[We consider ways in which users might want to extend one inductive type into another. Consider the following example of Var/Term, instantiate the translations to the specific example rather than be so general.]
+// #aa[Make it much more obvious that #LeanALaCarte can really only manage adding new ctors]
 
-#aa[We consider ways in which users might want to extend one inductive type into another. Consider the following example of Var/Term, instantiate the translations to the specific example rather than be so general.]
-#aa[Make it much more obvious that #LeanALaCarte can really only manage adding new ctors]
+With the general structure of an inductive type in mind, we can now consider ways in which one may extend an inductive type into another. \
+There are morally two ways to extend an inductive type, which we refer to as vertical and horizontal extensions. The former consists of adding new constructors to an inductive type, the latter of adding new parameters or indices to it. Most modular systems only allow for doing vertical extensions, as it is both the easiest one to justify and implement well, and arguably the most useful one. Currently, #LeanALaCarte only manages vertical extensions, we discuss in our second case-study (@CS2) how some horizontal extensionality can be constructed in the system nonetheless with careful use of dependent types. 
 
-One can easily imagine wanting to extend or modify a specific inductive type in a few different, e.g by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
+// One can easily imagine wanting to extend or modify a specific inductive type in a few different, e.g by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
 
 #LeanALaCarte provides a new Lean command which, given an inductive and new constructors, constructs another inductive type which extends the original one with these new constructors, adding the relevant mappings between from the first to the second. The syntax is as follows:
 ```lean
 mod inductive <new inductive> extends <old inductive> where
   <new constructors>
 ```
-For example, the previously defined `Term` type can now be constructed as such:
+Consider the following example: A user defines a notion of a variable type `Var`, which only has one constructor consisting of a natural number. 
 ```lean
 inductive Var where
   | var : Nat → Var
-
+```
+This representation for variables is common in both imperative and functional intermediate representations of programs. After producing an extensive API for this type, one may want to use this notion of variables as part of another type. Consider a new type `Term` which corresponds to that of a lambda-calculus. Such a calculus is constructed using variables, lambdas and applications. Such a type can be defined by extending the variable type as follows:
+```lean
 mod inductive Term extends Var where
   | lam : Term → Term
   | app : Term → Term → Term
 ``` 
+Similarly, one may want to extend the lambda-calculus with other constructs, such as booleans. Since `Term` is also just an inductive type, it can itself be extended with new constructions:
+```lean
+mod inductive BoolTerm extends Term where
+  | true  : BoolTerm
+  | false : BoolTerm
+  --- if     c   then   a   else   b
+  | ite : BoolTerm → BoolTerm → BoolTerm → BoolTerm
+
+-- λ b => if b then false else true
+#check lam (ite (var 0) false true) -- BoolTerm
+```
 After constructing this new type, #LeanALaCarte adds the relevant mappings from the old type to the new one in the mapping context. 
 Consider an inductive `A` of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this translation is the recursor. A recursor has the shape \ 
 $"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ \ 
@@ -454,7 +477,9 @@ The various vertices of the cube can be seen as various extensions of the initia
 == Definition modularity
 
 
-= Case study: extending STLC
+= Case studies: 
+
+== Extending STLC
 #let extCell(label) = box(
   width: 2.7cm,
   height: 1.2cm,
@@ -508,7 +533,8 @@ To showcase the capacity to merge separate extensions easily, we produced anothe
 
 #aa[Maybe give some approximation of the numbers of lines saved ?]
 
-= Case study: STLC to CPS translation
+== STLC to CPS translation
+<CS2>
 #let caseCell(label) = box(
   width: 2.9cm,
   height: 1.15cm,
