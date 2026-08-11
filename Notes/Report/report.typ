@@ -39,6 +39,8 @@
   #title[Modular proofs and programs in Lean]
   Internship report \
   Arthur Adjedj\
+  M2 MPRI, Université Paris-Saclay, ENS Paris-Saclay \ 
+  Supervised by Yannick Forster in the Cambium team, INRIA Paris, 
 ]
 
 #let abstract_margins = (left : 0.5cm, right: 0.5cm)
@@ -55,16 +57,20 @@ The pattern of extending definitions occurs particularly often in
 programming language theory, type theory, and program verification,
 leading to a lot of code duplication and high maintenance burden.
 Existing approaches to this problem either require encoding data-types as complicated expressions—obfuscating the development— or rely on custom intermediate representations of syntax via meta-programming facilities, which were underdeveloped in most ITPs until recently.\ 
-We develop #LeanALaCarte: a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
+We develop #LeanALaCarte #footnote[Pronounced gem·​el, describes pairs of trees that have undergone inosculation, i.e the act of connecting and merging with one another. ] : a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
 
 // #abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
 
-= Introduction
+= Summary
 
+== General context
+// What is the report about ? Where does the problem come from ? What is the state of the art in that area ?
 Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and mechanical verification of formal proofs. ITPs can be used to provide a very high level of guarantees for software (in particular the complete absence of bugs), and several projects make use of proof assistants to verify real-world software, such as the CompCert C compiler (@Leroy-Compcert-CACM), the sel4 operating systems kernel (@sel4), and AWS' authorization policy language, Cedar (@Cedar). They have also been used successfully to formalize landmark theorems in mathematics such as the Four Colour Theorem or the Feit Thompson theorem, and the use of proof assistants is on the rise in mathematics departments, with big mathematical developments like Lean's Mathlib library (@mathlib2020) getting more and more public attention. 
 
 Like other programming languages, ITPs fall victim to the the fact that reusing definitions can be non-trivial. This is generally referred to as the *expression problem* (@Wadler98): 
-#quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, without recompiling existing code.”] In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. Most projects that try to extend existing formalization resort to copying the original content and adapting it for its own purpose. 
+#quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, _without recompiling existing code_.”] 
+#aa[TODO adapt said quote to our real objective.]
+In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. Most projects that try to extend existing formalization resort to copying the original content and adapting it for its own purpose. 
 Since proofs about programs are arguably even harder to maintain than programs, this copy-paste approach incurs a huge maintenance burden.
 
 "Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and expose the underlying internals of the encodings to the user.
@@ -77,14 +83,36 @@ On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programmin
 None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalizations "after the fact". Instead, formalizations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 #aa[Mention Rocqet too.]
 
-We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalization of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalization of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
+
+== Research problem
+
+// What specific question(s) have you studied ? What motivates the question ? What are its applications/consequences ? Is it a new problem ? Why did you choose this problem ?
+
+== Your contribution
+// What is your answer to the research problem ? Please remain at a high level ; technical details should be given in the main body of the report. Pay special attention to the description of the scientific approach. 
+
+We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses.
+
+== Arguments supporting its validity
+
+// What is the evidence that your solution is a good solution ? (Experi- ments ? Proofs ?) Comment on the robustness of your solution : does it rely on assumptions, and if so, to what extent ?
+
+To demonstrate the capacitie of our system, we present two case-studies implemented using our tool. The first takes an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extends it with new constructions, modularly proving the strong normalization of the new calculuses. The reimplementing Pyrosome's main case-study using our tool instead. The formalization consists of a construction of STLC and a CPS calculus, as well as a translation pass from the former to the latter. The formalisation then extends both STLC and CPS with various constructionss, and extends the translation pass between the respective extensions. \ 
+Together, these two case-studies serve to show that the fundamentally basic ideas behind #LeanALaCarte are powerful enough to scale up to all features provided by previous tools, as well as allowing one to to extend an independent formalisation after the fact, which is unique to our framework. 
+
+== Summary and future work
+
+// What did you contribute to the area ? What comes next ? What is a good next step or question ?
+
+
+// We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalization of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalization of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
 
 Formal presentation of extensions
 
 This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate information "after the fact".
 
-#aa[TODO section intro]
-#aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
+// #aa[TODO section intro]
+// #aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
 
 = Partial mappings
 
@@ -188,7 +216,8 @@ We hereon make use of our system of partial maps to provide users with ways to m
 
 == What is an inductive type
 // With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
-First, let us look at what an inductive type is. We will not focus on the semantic meaning of inductive types so much as their syntax here, since what we care about is exposing new syntax to users. Inductive types are shaped as follows:
+First, let us look at what an inductive type is. We will not focus on the semantic meaning of inductive types so much as their syntax here, since what we care about is exposing new syntax to users. The general intuition of an inductive type is that it is a regular datatype, of which terms can be constructed by using recursors, and which can be eliminated through the use of a recursor, i.e an induction principle. \ 
+Inductive types are shaped as follows:
 
 #let ctor = $bold("ctor")$
 #let newctor = $bold("newctor")$
@@ -199,7 +228,7 @@ space | ctor_1 : accent((a_1 : A_1),->) → I space accent(p,->) space  accent(d
 space space space space ...\
 space | ctor_n : accent((a_n : A_n),->) → I space accent(p,->) space accent(d_n,->) $
 
-An inductive (family of) type(s) is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurrence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurrence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
+An inductive type is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurrence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurrence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
 // #aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
 #align(center)[
 #grid(columns: 2)[
@@ -223,10 +252,10 @@ inductive Vec (A : Type) : Nat → Type where
 `Nat` is an inductive type with no parameters and no indices, as well as two constructors `Z` and #S, the first one containing no field and the second containing one recursive occurrence of #Nat as its sole field. In comparison, #Vec is an inductive type which has one parameter `A`, is indexed by a natural number, and has two constructors. The former has no field and instantiate its index at 0, the second has 3 fields with one recursive one. `Vec A n` can be interpreted as the type of lists of `A` of size `n`.
 
 To each inductive type is associated a recursor, i.e a way to recursively eliminate a term of that type. For example, the recursor for `Nat` has the following type:\
-$NatRec : (motive : Nat → univ) → ("zero" : motive #Z) → ("succ" : (n : Nat) → motive n → motive (#S n)) → (t : Nat) → motive t$\
-The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the recursion principle for natural numbers. 
+$NatRec : (motive : Nat → univ) → motive #Z → ((n : Nat) → motive n → motive (#S n)) → (t : Nat) → motive t$\
+The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the regular induction principle for natural numbers. 
 
-#aa[Perhaps explain the semantics of inductive types as least fixed-point of a given functor, and in the next section why the fact that one inductive extends the other is semantically trivial ?]
+// #aa[Perhaps explain the semantics of inductive types as least fixed-point of a given functor, and in the next section why the fact that one inductive extends the other is semantically trivial ?]
 // Semantically speaking, an inductive type can be seen as the least-fixed point of a (strictly positive) functor. For example, the definition of `Nat` can be interpreted as the least-fixed point of the functor `FNat A := 1 + A`. This is a useful insight for justifying why 
 
 == Our approach towards extending inductive types
@@ -268,21 +297,31 @@ mod inductive BoolTerm extends Term where
 -- λ b => if b then false else true
 #check lam (ite (var 0) false true) -- BoolTerm
 ```
-After constructing this new type, #LeanALaCarte adds the relevant mappings from the old type to the new one in the mapping context. 
-Consider an inductive `A` of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this translation is the recursor. A recursor has the shape \ 
+Internally, after constructing this new type, #LeanALaCarte adds the relevant mappings from the old type to the new one in the mapping context: 
+Consider an inductive `A` of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this 
+translation is the recursor. \ 
+\ 
+A recursor has the shape: \ 
 $"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ \ 
-where for every constructor, there is a `minor`  
-As such, we can map this recursor to $"B.rec"$ by simply mapping all the arguments straightforwardly, and leaving a metavariable hole for the minor of the new constructor:
+where for every constructor of the type, there is a `minor` covering the (potentially recursive) case associated to it. \ 
+`B`'s recursor is very similar, except it contains an additional minor for the `newctor`'s case. #LeanALaCarte partially maps any application with head `A.rec` into `B.rec` by partially mapping each argument (i.e the parameters, motive, minors and major), and adding a metavariable hole for the minor corresponding to `newctor`:
 
 $\
-⟦"A.rec" accent(p,->) motive accent(minor,->) space accent(i,->) space a⟧ := "B.rec" accent(⟦p⟧,->) space ⟦motive⟧ space accent(⟦minor⟧,->) space ?m space accent(⟦i⟧,->) space ⟦a⟧$
-
-Consider the previous example. `Var` thus gets partially mapped to `Term` and `Var.var` to `Term.Var`. The respective recursors are as follows:
+⟦"A.rec" accent(p,->) motive accent(minor,->) space accent(i,->) space a⟧ := "B.rec" accent(⟦p⟧,->) space ⟦motive⟧ space accent(⟦minor⟧,->) space ?m space accent(⟦i⟧,->) space ⟦a⟧$ \
+This mapping is automatically produced and added to the mapping context upon constructing a `mod inductive`. 
+Consider the previous example of `Var` and `Term`, their respective recursors are as follows:
 ```lean
-Var.rec  : {motive : Var  → Type} → (var : (a : Nat) → motive (var a)) → (t : Var) → motive t
-Term.rec : {motive : Term → Type} → (var : (a : Nat) → motive (var a)) → (lam : (a : Term) → motive a → motive (lam a)) → (app : (f t : Term) → motive f → motive t → motive (app f t)) → (t : Term) → motive t
+Var.rec  : (motive : Var  → Type) → ((a : Nat) → motive (var a)) → 
+  (t : Var) → motive t
+Term.rec : (motive : Term → Type) → ((a : Nat) → motive (var a)) → 
+  ((a : Term) → motive a → motive (lam a)) → 
+  ((f t : Term) → motive f → motive t → motive (app f t)) → 
+  (t : Term) → motive t
 ```
-As such, `Var.rec` gets translated as follows: \ `⟦Var.rec motive var t⟧ => Term.rec ⟦ motive ⟧ ⟦ var ⟧ ?m1 ?m2 ⟦ t ⟧ `
+
+We see that the motive, existing minor for `var` and the major `t` can be translated into a `Term.rec` call by simply adding new holes for the `lam` and `app` minors. The translation goes as follows: \ `⟦Var.rec motive pvar t⟧ => Term.rec ⟦ motive ⟧ ⟦ pvar ⟧ ?m1 ?m2 ⟦ t ⟧ `
+
+Note that metavariable holes such as `?m1` and `?m2` cannot, in general, be resolved automatically by Lean, and are instead meant to be resolved by the user, the next section on definitions extensions discusses the interface provided by #LeanALaCarte for that purpose in more details.
 
 Additionally to the primitives surrounding an inductive type, Lean also automatically produces more than a dozen auxiliary declarations, meant to make the automation and user-experience friendlier. For example, upon defining an inductive type `Foo`, Lean will, for every constructor `ctor`, define a helper lemma `Foo.ctor.inj` which proves the injectivity property of said constructor.
 In order to avoid making users define mappings between auxiliary declarations produced by the original and the extended type by hand, #LeanALaCarte automatically generates said mappings automatically (e.g `Var.var.inj` gets automatically mapped to `Term.var.inj` in the previous example).
@@ -476,6 +515,8 @@ The various vertices of the cube can be seen as various extensions of the initia
 
 == Inductive modularity
 
+
+
 == Definition modularity
 
 
@@ -508,7 +549,6 @@ In order to iterate on this implementation and ensure its usability, we studied 
 
 #align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
 inductive Ty : Type where
-| base : Ty
 | arrow : Ty → Ty → Ty
 ```][```lean
 inductive Term where
@@ -524,8 +564,8 @@ inductive Ty extends Ty where
   | nat
 ```][```lean
 inductive Term extends Term where
-  | zero : Term
-  | succ : Term → Term
+  | zero   : Term
+  | succ   : Term → Term
   | natRec : Term → Term → Term → Term
 ```]]]
 
@@ -580,10 +620,10 @@ To showcase the capacity to merge separate extensions easily, we produced anothe
 To showcase the capabilities of our framework, and provide a point of comparison with another modular system, we reproduce the central case study shown in Pyrosome's (@Pyrosome) paper. This case study introduces 
 
 
-Explain the challenges of intrinsic verification, how Pyrosome's GAT was circumvented with indexed inductives and quotients. 
+#aa[Explain the challenges of intrinsic verification, how Pyrosome's GAT was circumvented with indexed inductives and quotients.]
 
 
-== Related works
+= Related works
 
 We compare our approach with the recent literature with a special focus on approaches that adapt Data Types à la Carte to proof assistants. 
 
@@ -608,7 +648,7 @@ We compare our approach with the recent literature with a special focus on appro
 // None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 #aa[TODO talk in details about Rocquet, Datatypes à la Carte, Meta-Theory à la Carte, Pyrosome, Rocq à la Carte]
 
-== Future work
+=² Future work
 
 - Horizontal extensions
 - ETT to ITT translation to circumvent divergences in reduction behaviour between a term and its translation 
