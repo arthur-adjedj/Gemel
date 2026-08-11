@@ -315,12 +315,14 @@ def Term.repr : Term → String
 ```
 This however leads to a duplication of the `var` case, which in turns lead to a burden of maintenance. If, for example, the user was to change how variables are pretty-printed in the `Var.var` case, this change would have to be copy-pasted for the `Term.var` case, which would be hard to track in general.
 Instead, #LeanALaCarte introduces a new #raw("mod def", lang: "lean") syntax to allow users to reuse existing branches in a previously defined function, and only require them to fill-in the holes needed to go from a definition over one type to a definition of the same shape over an extension of said type. This syntax allows to rewrite `Term.repr` as follows:
+
+#box[
 ```lean
 mod def Term.repr extends Var.repr where
   extend with
   | app f x => s!"{Term.repr f} {Term.repr x}"
   | lam f => s!"λ {Term.repr f}"
-```
+```]
 
 Now, any change done to `Var.repr` would also change downstream of it for `Term.repr`. 
  
@@ -433,12 +435,12 @@ Extending it for `Term` will add two new proof holes originating from the `cases
 ```lean
 mod def Term.is_var_zero_eq extends is_var_zero_eq where
   finally
-  case lam _ => nomatch h
+  case lam _   => nomatch h
   case app _ _ => nomatch h
 ```
 
 Termination information such as #raw("termination_by", lang: "lean") or #raw("decreasing_by", lang: "lean") can be additionally provided if needed to help with producing a well-founded recursive function. 
-For example, the previous `Term.repr` function could have had an explicitly given annotation such as `termination_by structural t => t`, indicating that the function is structurally recursive over it's argument `t : Term`. In practice, and as is the case for the regular Lean definition, most functions' termination information is trivial enough to be inferred by the Lean, and thus does not require additional user-input. 
+For example, the previous `Term.repr` function could have had an explicitly given annotation such as #raw("termination_by structural t => t", lang: "lean"), indicating that the function is structurally recursive over it's argument `t : Term`. In practice, and as is the case for the regular Lean definition, most functions' termination information is trivial enough to be inferred by the Lean, and thus does not require additional user-input. 
 
 
 
