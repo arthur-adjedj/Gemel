@@ -100,9 +100,11 @@ Together, these two case-studies serve to show that the fundamentally basic idea
 
 == Summary and future work
 
+We contribute a ready-to-use tool to easily extend past formalisation into new ones. That tool still exposes some limitations and a potential for further improvements which are discussed in the future works (@FutureWorks), but is fairly complete in its original objective. A good next step would be to make the tool mature enough to be used in real world cases such as Lean's computer science library CSLib (@cslib) , where e.g various type-systems formalisation could benefit from the tool.
+#pagebreak()
 // What did you contribute to the area ? What comes next ? What is a good next step or question ?
 
-#aa[What did you contribute to the area ? What comes next ? What is a good next step or question ?]
+// #aa[What did you contribute to the area ? What comes next ? What is a good next step or question ?]
 // We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalization of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalization of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
 
 // Formal presentation of extensions
@@ -701,8 +703,8 @@ None of these systems, independently of whether they use encodings or the meta-p
 // None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 #aa[TODO talk in details about Rocquet, Datatypes à la Carte, Meta-Theory à la Carte, Pyrosome, Rocq à la Carte]
 
-=² Future work
-
+= Future work
+<FutureWorks>
 - Horizontal extensions
 - ETT to ITT translation to circumvent divergences in reduction behaviour between a term and its translation 
 - Zipper-like structure on expressions to traverse "up" and generalize a goal "after the fact"
