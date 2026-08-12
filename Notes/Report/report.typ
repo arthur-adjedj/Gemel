@@ -35,6 +35,12 @@
 
 #let LeanALaCarte = text(weight:"bold","Gemel")
 
+#let appendix(body) = {
+  set heading(numbering: "A", supplement: [Appendix])
+  counter(heading).update(0)
+  body
+}
+
 #align(center)[
   #title[Modular proofs and programs in Lean]
   Internship report \
@@ -69,24 +75,16 @@ Interactive Theorem Provers (ITPs), also known as proof assistants, are tools wh
 
 Like other programming languages, ITPs fall victim to the the fact that reusing definitions can be non-trivial. This is generally referred to as the *expression problem* (@Wadler98): 
 #quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, _without recompiling existing code_.”] 
-#aa[TODO adapt said quote to our real objective.]
-In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. Most projects that try to extend existing formalization resort to copying the original content and adapting it for its own purpose. 
-Since proofs about programs are arguably even harder to maintain than programs, this copy-paste approach incurs a huge maintenance burden.
-
-"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and expose the underlying internals of the encodings to the user.
-Having to deal with encodings of types rather than types adds
-a heavy burden in particular for new users interested in program verification.
-The lesson to include inductive data-types natively has been learned early by popular ITPs (namely Rocq and Lean), who at first had no primitive notions of inductive types in their systems and then resorted to add those. Nowadays, most systems usually possess a syntactic notion of (co-)inductive types, and justify the ability to define these via some classes of models, allowing users to work with the abstractions these types provide, rather than with their encoding in said models. The only popular system that still relies on encodings to define such types, and manages to hide their implementation details well, is Isabelle/HOL.
-
-On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the information given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
-
-None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalizations "after the fact". Instead, formalizations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
-#aa[Mention Rocqet too.]
+// #aa[TODO adapt said quote to our real objective.]
+In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well.
 
 
 == Research problem
 
 // What specific question(s) have you studied ? What motivates the question ? What are its applications/consequences ? Is it a new problem ? Why did you choose this problem ?
+
+The original expression problem from 1998 however does not exactly fit the constraints of modern ITPs, or even arguably that of programming languages, in particular with regards to avoiding recompiling existing code. Indeed, computers have since become fast enough, and memory storage big enough, that the constraints of compilation time or executable sizes are not central issues anymore. Our goal is instead to allow, in a proof-assistant, for defining datatypes as extensions of others through the addition of new constructors, as well as allow for extending theorems of definitions which manipulates datatypes such that the new ones may instead manipulate extensions of said datatypes.
+
 
 == Your contribution
 // What is your answer to the research problem ? Please remain at a high level ; technical details should be given in the main body of the report. Pay special attention to the description of the scientific approach. 
@@ -104,22 +102,67 @@ Together, these two case-studies serve to show that the fundamentally basic idea
 
 // What did you contribute to the area ? What comes next ? What is a good next step or question ?
 
-
+#aa[What did you contribute to the area ? What comes next ? What is a good next step or question ?]
 // We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalization of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalization of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
 
-Formal presentation of extensions
-
-This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate information "after the fact".
+// Formal presentation of extensions
+// 
+// This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate information "after the fact".
 
 // #aa[TODO section intro]
 // #aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
 
 = Partial mappings
 
-#aa[This whole part needs to be completely rewritten. Rather than provide a technical presentation, this section should motivate the idea of having such mappings, by explaining eg that Rocq à la Carte's solution to modularity wouldn't work in Lean, and that as such, constructing modularity by relying on meta-programming is evidently the right way to go.]
-#aa[This whole thing mainly needs a leading example, and a clear introduction of what the following terms mean:
-- partial mapping
-- mapping context  ]
+// The Data Types à la Carte approach of @Swierstra2008 proposes a solution in Haskell, where expressions are defined as a type parameterised by a functor F which is used to instantiate the type with so-called features. For example, arithmetic, boolean, and lambda features are encoded as: 
+// ```haskell
+// data Exp F = In ( F ( Exp F))
+// Arith X = (X, X) + N -- addition and nat. constants186
+// Booleans X = (X, X, X) + B -- if and boolean constants
+// Lambda X = N + (X, X) + X -- variables, app., abstraction
+// ```
+
+// Several features are dynamically combined via coproducts of functors, while functions can be defined as algebras with the help of type classes. Although the development makes heavy use of type classes, it fulfils the criteria of being concise, transparent, accessible, and truly modular.
+// Unfortunately, 
+
+An initial idea for achieving modularity in our system was to rely on an "à la carte" encoding similar to Rocq à la Carte's, i.e rely on a notion of "feature functors" that can be composed to construct new inductive types.
+```lean
+inductive ExpVar (exp : Type) where
+  | var : Nat → ExpVar exp
+
+inductive ExpLam (exp : Type) where
+  | app : exp → exp → ExpLam exp
+  | lam : exp → ExpLam exp 
+  
+inductive Exp₁ where
+  | expvar : ExpVar Exp₁ → Exp₁
+  | explam : ExpLam Exp₁ → Exp₁
+```
+
+The idea behind this design is that "merging" functions defined over the different feature functors (here `ExpVar` and `ExpLam`) is to define function :
+```lean
+def ExpLam.count (f : exp → Nat) : ExpLam exp → Nat
+  | app e₁ e₂ => (f e₁) + (f e₂)
+  | lam e => f e
+
+def ExpVar.count (f : exp → Nat) : ExpVar exp → Nat
+  | var _ => 1
+
+def Exp₁.count : Exp₁ → Nat -- Error: Failed to show termination
+  | expvar v => ExpVar.count Exp₁.count v
+  | explam v => ExpLam.count Exp₁.count v
+```
+However, there is two issues with doing this in Lean, which was the language of choice for this work. First, this does not allow for extending a formalisation after the fact, a formalisation needing to be extended would have needed to be written using feature functors to start with, which is not the usual way in are a non-common design pattern. The second, more problematic, is that the previous code throws a non-termination error in Lean. Indeed, functions in proof-assistants are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Each popular proof-assistant ensures this restriction differently,(this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq manages what can is referred to as beta-iota cuts, i.e the ability to reduce function calls in which a recursive call might be nested in (e.g `ExpVar.count` in the `ExpVar.count Exp₁.count v` recursive occurence) in order to prove the recursive function being defined (here `Exp₁.count`) is indeed only used on strictly smaller subterms, thus ensuring structural recursion. This feature is paramount to @Forster2020's method for producing modular code, and cannot be easily replicated in Lean.
+
+One core objective of #LeanALaCarte is the ability to extend a formalisation or program after the fact, i.e no matter the shape it may have been given by an independent implementor. In order to do so, we shift our focus from encodings "à la Carte" to making clever use of the existing metaprogramming APIs provided by Lean to achieve our goal of modularity. In particular, we want to be able to translate any definition written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$ as a *partial mapping*. An important property such a translation needs to have is that any initially well-typed term (in a given context) should, after being translated, still be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
+
+The technical details about how such partial mappings are implemented are described in @AppendixA
+
+
+// #aa[This whole part needs to be completely rewritten. Rather than provide a technical presentation, this section should motivate the idea of having such mappings, by explaining eg that Rocq à la Carte's solution to modularity wouldn't work in Lean, and that as such, constructing modularity by relying on meta-programming is evidently the right way to go.]
+// #aa[This whole thing mainly needs a leading example, and a clear introduction of what the following terms mean:
+// - partial mapping
+// - mapping context  ]
 
 // This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
 
@@ -627,6 +670,16 @@ To showcase the capabilities of our framework, and provide a point of comparison
 
 We compare our approach with the recent literature with a special focus on approaches that adapt Data Types à la Carte to proof assistants. 
 
+"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and expose the underlying internals of the encodings to the user.
+Having to deal with encodings of types rather than types adds
+a heavy burden in particular for new users interested in program verification.
+The lesson to include inductive data-types natively has been learned early by popular ITPs (namely Rocq and Lean), who at first had no primitive notions of inductive types in their systems and then resorted to add those. Nowadays, most systems usually possess a syntactic notion of (co-)inductive types, and justify the ability to define these via some classes of models, allowing users to work with the abstractions these types provide, rather than with their encoding in said models. The only popular system that still relies on encodings to define such types, and manages to hide their implementation details well, is Isabelle/HOL.
+
+On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the information given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
+
+None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalizations "after the fact". Instead, formalizations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
+#aa[Mention Rocqet too.]
+
 *Data Types à la Carte* TODO
 
 *Coq à la Carte* TODO
@@ -657,15 +710,9 @@ We compare our approach with the recent literature with a special focus on appro
 #pagebreak()
 #bibliography("biblio.bib", title : "References", style : "citation-style.csl")
 #pagebreak()
-
-= Appendix A : Formal presentation of extensions
-
-This section presents the technical details of the LeanALaCarte implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate informations "after the fact".
-
-#aa[TODO section intro]
-#aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
-
-== Partial mappings
+#show: appendix
+= Formal presentation of partial mappings
+<AppendixA>
 
 This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
 
@@ -741,7 +788,7 @@ We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the
 #let modmapJudgementSet = [#grid(columns: 2,column-gutter: 2em)[#block(inset: 0.3em,stroke: 0.1em)[$modmap(Theta, Gamma,Delta ,t,t', A, A')$]][(In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)]
 #aa[TODO fix spacing]
 
-#rule-set(modmap_univ,modmap_var,modmap_const,modmap_mvar,modmap_app,modmap_pi,modmap_lam)
+#rule-set(modmap_univ, modmap_var, modmap_const, modmap_mvar, modmap_app, modmap_pi, modmap_lam)
 ]
 
 #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
@@ -753,4 +800,5 @@ The data contained in this judgement is enough to ensure any partially mapped te
 + $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, 
 Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
 Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
-#aa[TODO: actually prove this #emoji.face.woozy]
+#aa[TODO: This theorem is false, actually #emoji.face.woozy]
+#outline(target: heading.where(supplement: [Appendix]), title: [Appendix])
