@@ -23,6 +23,7 @@
 #let yf(body) = text(fill:purple, "YF: " + body)
 #let nt(body) = text(fill:red.lighten(20%), "NT: " + body)
 #set raw(syntaxes: "Lean.sublime-syntax")
+#show raw.where(block: true): block.with(breakable: false)
 #set block(spacing: 2em)
 #let ie= emph[i.e.,]
 #let eg= emph[e.g.,]
@@ -100,7 +101,7 @@ Together, these two case-studies serve to show that the fundamentally basic idea
 
 == Summary and future work
 
-We contribute a ready-to-use tool to easily extend past formalisation into new ones. That tool still exposes some limitations and a potential for further improvements which are discussed in the future works (@FutureWorks), but is fairly complete in its original objective. A good next step would be to make the tool mature enough to be used in real world cases such as Lean's computer science library CSLib (@cslib) , where e.g various type-systems formalisation could benefit from the tool.
+We contribute a ready-to-use tool to easily extend past formalisation into new ones. That tool still exposes some limitations and a potential for further improvements which are discussed in the future works (@FutureWorks), but is fairly complete in its original objective, as shown by our case-studies. A good next step would be to make the tool mature enough to be used in real world cases such as Lean's computer science library CSLib (@cslib) , where e.g various type-systems formalisation could benefit from the tool.
 #pagebreak()
 // What did you contribute to the area ? What comes next ? What is a good next step or question ?
 
@@ -156,7 +157,8 @@ def Exp₁.count : Exp₁ → Nat -- Error: Failed to show termination
 ```
 However, there is two issues with doing this in Lean, which was the language of choice for this work. First, this does not allow for extending a formalisation after the fact, a formalisation needing to be extended would have needed to be written using feature functors to start with, which is not the usual way in are a non-common design pattern. The second, more problematic, is that the previous code throws a non-termination error in Lean. Indeed, functions in proof-assistants are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Each popular proof-assistant ensures this restriction differently,(this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq manages what can is referred to as beta-iota cuts, i.e the ability to reduce function calls in which a recursive call might be nested in (e.g `ExpVar.count` in the `ExpVar.count Exp₁.count v` recursive occurence) in order to prove the recursive function being defined (here `Exp₁.count`) is indeed only used on strictly smaller subterms, thus ensuring structural recursion. This feature is paramount to @Forster2020's method for producing modular code, and cannot be easily replicated in Lean.
 
-One core objective of #LeanALaCarte is the ability to extend a formalisation or program after the fact, i.e no matter the shape it may have been given by an independent implementor. In order to do so, we shift our focus from encodings "à la Carte" to making clever use of the existing metaprogramming APIs provided by Lean to achieve our goal of modularity. In particular, we want to be able to translate any definition written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$ as a *partial mapping*. An important property such a translation needs to have is that any initially well-typed term (in a given context) should, after being translated, still be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
+One core objective of #LeanALaCarte is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making clever use of the existing metaprogramming APIs provided by Lean to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function-written onwards as $⟦\_⟧$-as a *partial mapping* #aa[I hadn't taken a second to think about this until now, but this is a terribly bad name ? Partial maps already exist and mean a completely different thing ?]. Said mapping is referred to as partial in that a term may get translated into something which may contain holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the section on inductive types. 
+An important property for such a translation should be that, given a well-typed term (in a given context), its partially mapping should itself also be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
 
 The technical details about how such partial mappings are implemented are described in @AppendixA
 
@@ -304,7 +306,7 @@ The existence of that recursor can be interpreted as the statement that, given a
 // Semantically speaking, an inductive type can be seen as the least-fixed point of a (strictly positive) functor. For example, the definition of `Nat` can be interpreted as the least-fixed point of the functor `FNat A := 1 + A`. This is a useful insight for justifying why 
 
 == Our approach towards extending inductive types
-
+<extendInd>
 // #aa[Structural sentences, extend that this is our work, not just exposition, expand on the decision to talk about extending a type with new constructors. Motivating example comes too late it feels like ?]
 // 
 // #aa[We consider ways in which users might want to extend one inductive type into another. Consider the following example of Var/Term, instantiate the translations to the specific example rather than be so general.]
@@ -423,7 +425,7 @@ def is_var_zero : Var → Bool
   | var 0     => true
   | var (n+1) => false
 ```
-The shape of the match get elaborated into an auxiliary function 
+The shape of the match get elaborated into an auxiliary function:
 ```lean
 is_var_zero.match_1 : (motive : Var → Type) → (x : Var) → 
 (Unit → motive (var 0)) → ((n : Nat) → motive (var (n + 1))) → motive x
@@ -445,7 +447,6 @@ After initially implementing the first option, we have converged towards relying
 
 The first option of asking users to fill in the proof-holes of the extended recursors that constructs a match is unreasonable, as it exposes far too many internal details. The definition of a given match can quickly become complex if it matches on multiple elements, needs to generalize some variables or contains some proofs of equality between the thing matched on and a given constructor in a branch. Extending any of this would make an unreadable mess for the users and is too detached from what a user would do had he just written this as a normal definition. Consider the case of `is_var_zero` being extended to `Term`. For both the `app` and `lam` case, the result is the same (i.e `false`). Producing this extension would require both extending the implementation of `match_1` (by adding a branch for `(t : Term) → motive (lam t)` and `(f t : Term) → motive (app f t)`), and adding the right arguments for the right-hand-side of said new branches (i.e `fun t => false` and `fun f t => false`). This means, in this specific example, that a user would need to fill in 4 holes, half of them having a non-trivial shape which mentions an arbitrary `motive` that did not appear in the concrete syntax of the original definition.
 
-\
 The second option turns out to be the most ergonomic, although it makes the implementation work harder. In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher gets translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations. \
 Take the example of `is_var_zero` getting extended to `Term`:
 ```lean
@@ -530,7 +531,7 @@ For example, the previous `Term.repr` function could have had an explicitly give
 
 
 = Making extensions modular
-The current set-up allows one to extend previous definitions iteratively, though one may argue these extensions are not strictly "modular". In particular, one cannot simply "apply" an extension to adeclaration, and instead needs to ground his extensions on base declarations. This, in particular, means one isn't able to compose different extensions. Take the example of the Barendregt lambda-cube (@Barendregt1991):
+The current set-up allows one to extend previous definitions iteratively, though one may argue these extensions are not strictly "modular". In particular, one can currently only construct a declaration as an extension of a single other declaration rather than multiple. This, in particular, means one isn't able to compose different extensions. Take the example of the Barendregt lambda-cube (@Barendregt1991):
 
 // https://q.uiver.app/#r=typst&q=WzAsOCxbMCw0LCJcXGxhbWJkYSJdLFswLDEsIlxcbGFtYmRhMiJdLFszLDQsIlxcbGFtYmRhIFAiXSxbMSwzLCJcXGxhbWJkYVxcb21lZ2EiXSxbMSwwLCJcXGxhbWJkYVxcb21lZ2EiXSxbNCwwLCJcXGxhbWJkYSBDIl0sWzQsMywiXFxsYW1iZGEgUFxcb21lZ2EiXSxbMywxLCJcXGxhbWJkYSBQMiJdLFswLDFdLFswLDJdLFswLDNdLFszLDRdLFsxLDRdLFs0LDVdLFsyLDZdLFszLDZdLFs2LDVdLFsyLDddLFsxLDddLFs3LDVdXQ==
 #align(center, diagram(spacing: 1em,{
@@ -556,18 +557,59 @@ The current set-up allows one to extend previous definitions iteratively, though
 	edge((1, -2), (2, -3), "->")
 }))
 
-The various vertices of the cube can be seen as various extensions of the initial vertex corresponding to STLC. However, an important feature of this cube is that all vertices can be written as compositions of the 3 adjactent vertices of $lambda$, namely $lambda P$, $lambda 2$ and $lambda underline(omega)$. If one wanted to formalise each vertex of the cube in the past, they would need to write down 8 different formalisations. With our current framework, they need only write down 1 formalisation and 7 extensions of that base formalisation. If our system was modular however, one would only need to write down the base formalisation and the 3 adjacent extensions, only needing to compose them to get the rest of them afterwards. We focus back on our extension systems for inductive types and definitions and describe a way to make them composable, thus achieving true modularity.
+The various vertices of the cube can be seen as various extensions of the initial vertex corresponding to STLC. However, an important feature of this cube is that all extensions of $lambda$ can be written as mergings of its 3 adjactent vertices, namely $lambda P$, $lambda 2$ and $lambda underline(omega)$ (e.g $lambda P 2$ corresponds simply to the merging of $lambda 2$ and $lambda P$). If one wanted to formalise each vertex of the cube before #LeanALaCarte, they would need to write down 8 different formalisations. With our current framework, they need only write down 1 formalisation and 7 extensions of that base formalisation. If our system was truly modular however, one would only need to write down the base formalisation and the 3 adjacent extensions, the rest being simply generated by merging the adjacent extensions. To make this possible, we extend #LeanALaCarte's handling of inductive types and definitions extensions and describe a way to make them composable, thus achieving true modularity. In practice, from a user perspective, all that gets added is the ability to define a `mod inductive` or `mod def` that `extends` more than one single declaration. 
 
 == Inductive modularity
 
+Extending `mod inductive` to be able to extend more than one inductive type is a fairly trivial task. Rather than only taking the constructors of one inductive, users may take constructors from multiple types. The mapping context will then map every old type to the new one, every old constructor from each old type to the relevant new ones. Consider the example of `BoolTerm` extending `Term` in @extendInd, one may also extend `Term` to handle natural numbers, and merge the two extensions as follows:
+```lean
+mod inductive NatTerm extends Term where
+  | zero : NatTerm
+  | succ : NatTerm → NatTerm
+  --   match n with | 0 => P0 | n+1 => Pn n
+  | natmatch : NatTerm → NatTerm → NatTerm → NatTerm
 
+mod inductive BoolNatTerm extends BoolTerm, NatTerm
+```
+The generated inductive `BoolNatTerm` will contain all of the basic `Term` constructors, as well as the additional ones provided by `BoolTerm` and `NatTerm`.
 
 == Definition modularity
+
+Consider the previous examples of defining `is_var_zero` and `is_var_zero_eq` to `BoolNatTerm`, consider the two declarations have already been extended to `BoolTerm` and `NatTerm`:
+```lean
+mod def BoolTerm.is_var_zero extends Term.is_var_zero where
+  extend with
+    | true | false | ite _ _ _ => false
+
+mod def NatTerm.is_var_zero extends Term.is_var_zero where
+  extend with
+    | zero | succ _ | natmatch _ _ _ => false
+```
+
+We can partially map both declarations into functions talking about `BoolNatTerm`. Both of them will be partial in that the pattern-match will be incomplete in both cases (e.g the cases for `zero` will be missing from the partial mapping of `BoolTerm.is_var_zero`). However, both declarations will have the same shape modulo having different holes in different places. We make use of that and construct an algorithm that syntactically merges two expressions together, and throws an error if their shape diverges. In practice, in the case of `is_var_zero`, this means the respective matches get merged correctly, meaning there is no need for the user to add anymore information in order to merge the two declarations:
+```lean
+-- No `extend with` block needed to complete the match
+mod def BoolNatTerm.is_var_zero 
+  extends BoolTerm.is_var_zero, NatTerm.is_var_zero 
+```
+
+Similarly, the proof for `is_var_zero_eq` need not anymore information after merging both `BoolTerm.is_var_zero_eq` and `NatTerm.is_var_zero_eq`:
+```lean
+mod def BoolTerm.is_var_zero_eq extends Term.is_var_zero_eq where finally
+  ... -- proof omitted
+
+mod def NatTerm.is_var_zero_eq extends Term.is_var_zero_eq where finally
+  ... -- proof omitted
+
+-- no `finally` block needed
+mod def BoolNatTerm.is_var_zero_eq 
+  extends BoolTerm.is_var_zero_eq, NatTerm.is_var_zero _eq
+```
 
 
 = Case studies: 
 
-== Extending STLC
+== Strong normalisation of the Simply Typed Lambda Calculus
 #let extCell(label) = box(
   width: 2.7cm,
   height: 1.2cm,
@@ -803,4 +845,3 @@ The data contained in this judgement is enough to ensure any partially mapped te
 Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
 Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
 #aa[TODO: This theorem is false, actually #emoji.face.woozy]
-#outline(target: heading.where(supplement: [Appendix]), title: [Appendix])
