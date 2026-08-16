@@ -57,15 +57,16 @@
   block(inset: (left: margin, right : margin))[#align(center)[
     #set align(left)
     #set par(justify: true)
+    #set text(size: 11pt)
     #body
   ]]}
 
-#abstract[Interactive theorem provers (ITPs) do not easily allow users to adapt and extend existing codebases without either changing the original code or duplicating it.
-The pattern of extending definitions occurs particularly often in 
-programming language theory, type theory, and program verification,
-leading to a lot of code duplication and high maintenance burden.
-Existing approaches to this problem either require encoding data-types as complicated expressions—obfuscating the development— or rely on custom intermediate representations of syntax via meta-programming facilities, which were underdeveloped in most ITPs until recently.\ 
-We develop #LeanALaCarte #footnote[Pronounced gem·​el, describes pairs of trees that have undergone inosculation, i.e the act of connecting and merging with one another. ] : a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
+// #abstract[Interactive theorem provers (ITPs) do not easily allow users to adapt and extend existing codebases without either changing the original code or duplicating it.
+// The pattern of extending definitions occurs particularly often in 
+// programming language theory, type theory, and program verification,
+// leading to a lot of code duplication and high maintenance burden.
+// Existing approaches to this problem either require encoding data-types as complicated expressions—obfuscating the development— or rely on custom intermediate representations of syntax via meta-programming facilities, which were underdeveloped in most ITPs until recently.\ 
+// We develop #LeanALaCarte #footnote[Pronounced gem·​el, describes pairs of trees that have undergone inosculation, i.e the act of connecting and merging with one another. ] : a tool implemented in Lean 4 to produce modular code, leveraging the strengths of dependent types and modern meta-programming techniques]
 
 // #abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
 
@@ -73,19 +74,19 @@ We develop #LeanALaCarte #footnote[Pronounced gem·​el, describes pairs of tre
 
 == General context
 // What is the report about ? Where does the problem come from ? What is the state of the art in that area ?
-Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and mechanical verification of formal proofs. ITPs can be used to provide a very high level of guarantees for software (in particular the complete absence of bugs), and several projects make use of proof assistants to verify real-world software, such as the CompCert C compiler (@Leroy-Compcert-CACM), the sel4 operating systems kernel (@sel4), and AWS' authorization policy language, Cedar (@Cedar). They have also been used successfully to formalize landmark theorems in mathematics such as the Four Colour Theorem or the Feit Thompson theorem, and the use of proof assistants is on the rise in mathematics departments, with big mathematical developments like Lean's Mathlib library (@mathlib2020) getting more and more public attention. 
+Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and mechanical verification of formal proofs. ITPs can be used to provide a very high level of guarantees for software (in particular the complete absence of bugs), and several projects make use of ITPs to verify real-world software, such as the CompCert C compiler (@Leroy-Compcert-CACM), the sel4 operating systems kernel (@sel4), and AWS' authorization policy language, Cedar (@Cedar). They have also been used successfully to formalize landmark theorems in mathematics such as the Four Colour Theorem or the Feit Thompson theorem, and the use of ITPs is on the rise in mathematics departments, with big mathematical developments like Lean's Mathlib library (@mathlib2020) getting more and more public attention (@quantabook). 
 
 Like other programming languages, ITPs fall victim to the the fact that reusing definitions can be non-trivial. This is generally referred to as the *expression problem* (@Wadler98): 
 #quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, _without recompiling existing code_.”] 
-// #aa[TODO adapt said quote to our real objective.]
-In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well.
+In fact, reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). It is even worse for ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. \
+The expression problem has found many tentative solutions, both in the space of programming languages and that of ITPs. In the latter (which we focus on for the rest of the paper), solutions range from making various encodings in which some notion of modularity comes internally "for free" (@Delaware2013, @Pyrosome). Some other rely on meta-programming to achieve their goals, with limited results (@Forster2020, @Rocqet). We discuss each tool's limitations in the related works (@related-works)
 
 
 == Research problem
 
 // What specific question(s) have you studied ? What motivates the question ? What are its applications/consequences ? Is it a new problem ? Why did you choose this problem ?
 
-The original expression problem from 1998 however does not exactly fit the constraints of modern ITPs, or even arguably that of programming languages, in particular with regards to avoiding recompiling existing code. Indeed, computers have since become fast enough, and memory storage big enough, that the constraints of compilation time or executable sizes are not central issues anymore. Our goal is instead to allow, in a proof-assistant, for defining datatypes as extensions of others through the addition of new constructors, as well as allow for extending theorems of definitions which manipulates datatypes such that the new ones may instead manipulate extensions of said datatypes.
+The original expression problem from 1998 does not fit the constraints of modern ITPs, in particular with regards to avoiding recompiling existing code. Indeed, computers have since become fast enough, and memory storage big enough, that the constraints of compilation time or executable sizes are not central issues anymore. Our goal is instead to allow, in an ITP, for defining datatypes as extensions of others through the addition of new constructors, as well as allow for extending theorems of definitions which manipulates datatypes such that the new ones may instead manipulate extensions of said datatypes. Such extensions should be doable on independent formalisations that were not made with our framework's constraints in mind.
 
 
 == Your contribution
@@ -97,7 +98,7 @@ We present #LeanALaCarte, a new library, written in the Lean 4 proof assistant, 
 
 // What is the evidence that your solution is a good solution ? (Experi- ments ? Proofs ?) Comment on the robustness of your solution : does it rely on assumptions, and if so, to what extent ?
 
-To demonstrate the capacitie of our system, we present two case-studies implemented using our tool. The first takes an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extends it with new constructions, modularly proving the strong normalization of the new calculuses. The reimplementing Pyrosome's main case-study using our tool instead. The formalization consists of a construction of STLC and a CPS calculus, as well as a translation pass from the former to the latter. The formalisation then extends both STLC and CPS with various constructionss, and extends the translation pass between the respective extensions. \ 
+To demonstrate the capacities of our system, we present two case-studies implemented using our tool. The first takes an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extends it with new constructions, modularly proving key results of the original formalisation, such as strong normalisation, about the extended calculuses. The second case study consists of a construction of STLC and a Call-Passing Style (CPS) calculus, as well as a translation pass from the former to the latter. The formalisation then extends both STLC and CPS with various constructionss, and extends the translation pass between the respective extensions. \ 
 Together, these two case-studies serve to show that the fundamentally basic ideas behind #LeanALaCarte are powerful enough to scale up to all features provided by previous tools, as well as allowing one to to extend an independent formalisation after the fact, which is unique to our framework. 
 
 == Summary and future work
@@ -116,20 +117,18 @@ We contribute a ready-to-use tool to easily extend past formalisation into new o
 // #aa[TODO section intro]
 // #aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
 
-= Partial mappings
 
-// The Data Types à la Carte approach of @Swierstra2008 proposes a solution in Haskell, where expressions are defined as a type parameterised by a functor F which is used to instantiate the type with so-called features. For example, arithmetic, boolean, and lambda features are encoded as: 
-// ```haskell
-// data Exp F = In ( F ( Exp F))
-// Arith X = (X, X) + N -- addition and nat. constants186
-// Booleans X = (X, X, X) + B -- if and boolean constants
-// Lambda X = N + (X, X) + X -- variables, app., abstraction
-// ```
 
-// Several features are dynamically combined via coproducts of functors, while functions can be defined as algebras with the help of type classes. Although the development makes heavy use of type classes, it fulfils the criteria of being concise, transparent, accessible, and truly modular.
-// Unfortunately, 
+= Representation of modular syntax
+<sec2>
 
-An initial idea for achieving modularity in our system was to rely on an "à la carte" encoding similar to Rocq à la Carte's, i.e rely on a notion of "feature functors" that can be composed to construct new inductive types.
+We first examine existing solutions to producing modular code in ITPs, showing their respective weaknesses, before explaining our framework for modularly extending syntax in #LeanALaCarte.
+
+== Existing solutions
+
+Solutions to the modularity problem in ITPs appear in two flavors: some tools work by encoding the datatypes manipulated in a framework which natively allows for some form of modularity (@Delaware2013, @Pyrosome), others rely on meta-programming to achieve their goal. We don't believe encodings to be viable solutions for our use-case, as they incur an abstraction cost for users and may not faithfully encode every datatype that is native to an ITP (here Lean). On the meta-programming side, Rocqet (@Rocqet) and Rocq à la carte (@Forster2020) both expose some additional syntax for the user to write in order to produce modular formalisms. Rocqet's design focuses on compiler verification specifically, whereas Rocq à la Carte aims to be a general framework for modular work, a scope that our project shares. We focus here on Rocq à la Carte's design here, with a deeper explanation of other frameworks in the Related Works (@related-works).
+
+Rocq à la Carte's design centers on constructing datatypes through the merging of inductive functors:
 ```lean
 inductive ExpVar (exp : Type) where
   | var : Nat → ExpVar exp
@@ -156,12 +155,13 @@ def Exp₁.count : Exp₁ → Nat -- Error: Failed to show termination
   | expvar v => ExpVar.count Exp₁.count v
   | explam v => ExpLam.count Exp₁.count v
 ```
-However, there is two issues with doing this. First, this does not allow for extending a formalisation after the fact, in order for a formalisation to be extended, it needs to be written using feature functors to start with, which is a uncommon design pattern which adds a fair bit of verbosity. The second issue is a technical one, and fairly specific to Lean, which is the language we chose to use for this work. The previous code would work in Rocq, but throws a non-termination error in Lean. Indeed, functions in proof-assistants are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Every popular proof-assistant ensures this restriction differently (this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq manages what is referred to as beta-iota cuts, i.e the ability to reduce function calls in which a recursive call might be nested in (e.g `ExpVar.count` in the `ExpVar.count Exp₁.count v` recursive occurence) in order to prove the recursive function being defined (here `Exp₁.count`) is indeed only called recursively on strictly smaller subterms, thus ensuring structural recursion. This feature is paramount to @Forster2020's method for producing modular code, and cannot be easily replicated in Lean.
+However, replicating (and extending on) this technique to bring modular tooling in the Lean proof assistant is not really feasable. The previous code snippet would work in Rocq, but throws a non-termination error in Lean. Indeed, functions in ITPs are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Every popular ITP ensures this restriction differently (this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq's system for detecting structural recursion works up to reduction, whereas Lean doesn't. Here, the ability to reduce function calls in which a recursive call might be nested in (e.g "`ExpVar.count`" in the "`ExpVar.count Exp₁.count v`" recursive occurence) is necessary to know the recursive function being defined (here `Exp₁.count`) is indeed only called recursively on strictly smaller subterms. This feature is paramount to Rocq à la Carte's method for producing modular code, and cannot be easily replicated in Lean due to divergences in the Lean's design decisions.
 
-One core objective of #LeanALaCarte is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making clever use of the existing metaprogramming APIs provided by Lean in order to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *partial mapping* #aa[I hadn't taken a second to think about this until now, but this is a terribly bad name ? Partial maps already exist and mean a completely different thing ?]. Said mapping is referred to as partial because a term may get translated into something which contains holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the next section. 
+== Our solution: modular maps
+One core objective of #LeanALaCarte is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making use of the existing metaprogramming APIs provided by Lean in order to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *modular map*. A term may get modularly mapped to something which contains holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the next section. 
 // An important property for such a translation should be that, given a well-typed term (in a given context), its partially mapping should itself also be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
-A partial mapping is dependent on a *mapping context*. This context maps some constants in the global environment to new terms.
-Using this mapping context, the algorithm for partial maps is straightforward: when partially mapping a constant present in the mapping context, map said constant to the term it maps to. Otherwise, translate terms structurally (e.g $⟦ λ a : A. t  ⟧ ::= λ a : ⟦ A ⟧. ⟦ t ⟧$). The full presentation about how such partial mappings are implemented are described in @AppendixA.
+A modular map is dependent on a *mapping context*. This context maps some constants in the global environment to new terms.
+Using this mapping context, the algorithm for modular maps is straightforward: when modularly mapping a constant present in the mapping context, map said constant to the term it maps to. Otherwise, translate terms structurally (e.g $⟦ λ a : A. t  ⟧ ::= λ a : ⟦ A ⟧. ⟦ t ⟧$). The full presentation about how such modular maps are implemented are described in @AppendixA.
 
 
 // #aa[This whole part needs to be completely rewritten. Rather than provide a technical presentation, this section should motivate the idea of having such mappings, by explaining eg that Rocq à la Carte's solution to modularity wouldn't work in Lean, and that as such, constructing modularity by relying on meta-programming is evidently the right way to go.]
@@ -260,7 +260,7 @@ $]
 = Inductive Types
 <ind_extension>
 
-We hereon make use of our system of partial maps to provide users with ways to modularly extend previously defined programs and formalizations. From a user perspective, a Lean program mainly consists of defining new inductive types, definitions and theorems. This section focuses on how #LeanALaCarte allows users to extend inductive definitions through addition of new constructors. 
+We hereon make use of our system of modular maps to provide users with ways to modularly extend previously defined programs and formalizations. From a user perspective, a Lean program mainly consists of defining new datatypes types, definitions and theorems. The main way to construct new datatypes in Lean is by defining new inductive types (@Coquand1990). This section focuses on how #LeanALaCarte allows users to extend inductive definitions through addition of new constructors. 
 
 == What is an inductive type
 // With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
@@ -276,7 +276,7 @@ space | ctor_1 : accent((a_1 : A_1),->) → I space accent(p,->) space  accent(d
 space space space space ...\
 space | ctor_n : accent((a_n : A_n),->) → I space accent(p,->) space accent(d_n,->) $
 
-An inductive type is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurrence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurrence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, list, and vectors (i.e list indexed by their lengths):
+An inductive type is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurrence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurrence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, lists, and vectors (i.e list indexed by their lengths):
 // #aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
 #align(center)[
 #grid(columns: 2)[
@@ -296,12 +296,19 @@ inductive Vec (A : Type) : Nat → Type where
 #let Z   = `Z`
 #let S   = `S`
 #let NatRec = `Nat.rec`
-
+#let P = `P`
+#let PZ = `PZ`
+#let PS = `PS`
 `Nat` is an inductive type with no parameters and no indices, as well as two constructors `Z` and #S, the first one containing no field and the second containing one recursive occurrence of #Nat as its sole field. In comparison, #Vec is an inductive type which has one parameter `A`, is indexed by a natural number, and has two constructors. The former has no field and instantiate its index at 0, the second has 3 fields with one recursive one. `Vec A n` can be interpreted as the type of lists of `A` of size `n`.
 
-To each inductive type is associated a recursor, i.e a way to recursively eliminate a term of that type. For example, the recursor for `Nat` has the following type:\
+To each inductive type is associated a recursor, i.e a way to eliminate a term of that type. For example, the recursor for `Nat` has the following type:\
 $NatRec : (motive : Nat → univ) → motive #Z → ((n : Nat) → motive n → motive (#S n)) → (t : Nat) → motive t$\
-The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the regular induction principle for natural numbers. 
+The existence of that recursor can be interpreted as the statement that, given a predicate #motive on natural numbers, an instance of that predicate on 0, and for every n, an instance of $motive (#S n)$ given $motive n$, that predicate holds for any natural number $t$. This corresponds exactly to the regular induction principle for natural numbers. Furthermore, recursors hold computational content in that they may reduce when applied to a constructor. For example, the two reduction rules for #NatRec are as follows:
+$
+NatRec #P #PZ #PS #Z arrow.r.squiggly #PZ 
+\ 
+NatRec #P #PZ #PS (#S n) arrow.r.squiggly #PS n space (NatRec #P #PZ #PS n)
+$
 
 // #aa[Perhaps explain the semantics of inductive types as least fixed-point of a given functor, and in the next section why the fact that one inductive extends the other is semantically trivial ?]
 // Semantically speaking, an inductive type can be seen as the least-fixed point of a (strictly positive) functor. For example, the definition of `Nat` can be interpreted as the least-fixed point of the functor `FNat A := 1 + A`. This is a useful insight for justifying why 
@@ -314,7 +321,7 @@ The existence of that recursor can be interpreted as the statement that, given a
 // #aa[Make it much more obvious that #LeanALaCarte can really only manage adding new ctors]
 
 With the general structure of an inductive type in mind, we can now consider ways in which one may extend an inductive type into another. \
-There are morally two ways to extend an inductive type, which we refer to as vertical and horizontal extensions. The former consists of adding new constructors to an inductive type, the latter of adding new parameters or indices to it. Most modular systems only allow for doing vertical extensions, as it is both the easiest one to justify and implement well, and arguably the most useful one. Currently, #LeanALaCarte only manages vertical extensions, we discuss in our second case-study (@CS2) how some horizontal extensionality can be constructed in the system nonetheless with careful use of dependent types. 
+There are morally two ways to extend an inductive type, referred to as vertical and horizontal extensions #aa[Who coined this convention ?]. The former consists of adding new constructors to an inductive type, the latter of adding new parameters or indices to it. Most modular systems only allow for doing vertical extensions, as it is both the easiest one to justify and implement well, and arguably the most useful one. Currently, #LeanALaCarte only manages vertical extensions, we discuss in our second case-study (@CS2) how some horizontal extensionality can be constructed in the system nonetheless with careful use of dependent types. 
 
 // One can easily imagine wanting to extend or modify a specific inductive type in a few different, e.g by either adding, removing or modifying either parameters, indices or constructors. We will only focus on adding constructors here.
 
@@ -333,6 +340,13 @@ This representation for variables is common in both imperative and functional in
 mod inductive Term extends Var where
   | lam : Term → Term
   | app : Term → Term → Term
+
+/- inductive Term : Type
+   constructors:
+     Term.lam : Term → Term
+     Term.app : Term → Term → Term
+     Term.var : Nat → Term -/
+#print Term
 ``` 
 Similarly, one may want to extend the lambda-calculus with other constructs, such as booleans. Since `Term` is also just an inductive type, it can itself be extended with new constructions:
 ```lean
@@ -346,17 +360,6 @@ mod inductive BoolTerm extends Term where
 #check lam (ite (var 0) false true) -- BoolTerm
 ```
 Internally, after constructing this new type, #LeanALaCarte adds the relevant mappings from the old type to the new one in the mapping context: 
-Consider an inductive `A` of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$, we can then map the type A to B and respectively every constructor of A to B's. The last missing piece to this 
-translation is the recursor. \ 
-\ 
-A recursor has the shape: \ 
-$"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ \ 
-where for every constructor of the type, there is a `minor` covering the (potentially recursive) case associated to it. \ 
-`B`'s recursor is very similar, except it contains an additional minor for the `newctor`'s case. #LeanALaCarte partially maps any application with head `A.rec` into `B.rec` by partially mapping each argument (i.e the parameters, motive, minors and major), and adding a metavariable hole for the minor corresponding to `newctor`:
-
-$\
-⟦"A.rec" accent(p,->) motive accent(minor,->) space accent(i,->) space a⟧ := "B.rec" accent(⟦p⟧,->) space ⟦motive⟧ space accent(⟦minor⟧,->) space ?m space accent(⟦i⟧,->) space ⟦a⟧$ \
-This mapping is automatically produced and added to the mapping context upon constructing a `mod inductive`. 
 Consider the previous example of `Var` and `Term`, their respective recursors are as follows:
 ```lean
 Var.rec  : (motive : Var  → Type) → ((a : Nat) → motive (var a)) → 
@@ -369,6 +372,18 @@ Term.rec : (motive : Term → Type) → ((a : Nat) → motive (var a)) →
 
 We see that the motive, existing minor for `var` and the major `t` can be translated into a `Term.rec` call by simply adding new holes for the `lam` and `app` minors. The translation goes as follows: \ `⟦Var.rec motive pvar t⟧ => Term.rec ⟦ motive ⟧ ⟦ pvar ⟧ ?m1 ?m2 ⟦ t ⟧ `
 Note that metavariable holes such as `?m1` and `?m2` cannot, in general, be resolved automatically by Lean, and are instead meant to be resolved by the user, the next section on definitions extensions discusses the interface provided by #LeanALaCarte for that purpose in more details.
+
+To generalize the previous example, consider an inductive `A` of parameters $accent((p : P),->)$, indices$ accent((i : I),->)$ and constructors $accent(ctor,->)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$. Extending this to manage adding multiple constructors is trivial, we omit this detail here. We can map the type A to B and respectively every constructor of A to B's. The last missing piece to this 
+translation is the recursor. \ 
+\ 
+Recursors have the following shape: \ 
+$"A.rec" : accent((p : P),->) -> (motive : accent((i : I),->) -> A space accent(p,->) space accent(i,->) -> univ) -> accent((minor : ... -> motive (ctor space ...)),->) -> accent((i : I),->) -> (a : A space accent(p,->) space accent(i,->)) -> motive accent(i,->) space a$ \ 
+where for every constructor of the type, there is a `minor` covering the (potentially recursive) case associated to it. \ 
+`B`'s recursor is very similar, except it contains an additional minor for the `newctor`'s case. #LeanALaCarte modularly maps any application with head `A.rec` into `B.rec` by modularly mapping each argument (i.e the parameters, motive, minors and major), and adding a metavariable hole for the minor corresponding to `newctor`:
+
+$\
+⟦"A.rec" accent(p,->) motive accent(minor,->) space accent(i,->) space a⟧ := "B.rec" accent(⟦p⟧,->) space ⟦motive⟧ space accent(⟦minor⟧,->) space ?m space accent(⟦i⟧,->) space ⟦a⟧$ \
+This mapping is automatically produced and added to the mapping context upon constructing a `mod inductive`. 
 
 Additionally to the primitives surrounding an inductive type, Lean also automatically produces more than a dozen auxiliary declarations, meant to make the automation and user-experience friendlier. For example, upon defining an inductive type `Foo`, Lean will, for every constructor `ctor`, define a helper lemma `Foo.ctor.inj` which proves the injectivity property of said constructor.
 In order to avoid making users define mappings between auxiliary declarations produced by the original and the extended type by hand, #LeanALaCarte automatically generates said mappings automatically (e.g `Var.var.inj` gets automatically mapped to `Term.var.inj` in the previous example).
@@ -384,7 +399,7 @@ In order to avoid making users define mappings between auxiliary declarations pr
 
 = Definition extensions
 
-Our framework now allows for inductive types to be extended through the addition of new constructors. This section focused on how declarations (i.e definitions and theorems) can be extended and partially mapped correctly. \
+Our framework now allows for inductive types to be extended through the addition of new constructors. This section focused on how declarations (i.e definitions and theorems) can be extended and modularly mapped correctly. \
 Going back to the previous example of `Term` extending `Var`, consider a function `Var.repr`, mapping a term of type `Var` to a string:
 
 ```lean
@@ -412,13 +427,13 @@ mod def Term.repr extends Var.repr where
 
 Now, any change done to `Var.repr` would also change downstream of it for `Term.repr`. 
  
-The general elaboration process of that syntax is as follows. Given a declaration \ (e.g `Var.repr`), one may partially map its body into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated body to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a partial mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
+The general elaboration process of that syntax is as follows. Given a declaration \ (e.g `Var.repr`), one may modularly map its body into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated body to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
 
 In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion are handled by the system. We discuss these two complications in the following sections.
 
 == Extending pattern-matches
 
-Pattern-matching is a ubiquitous feature of modern functional languages, and proof assistants make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. \
+Pattern-matching is a ubiquitous feature of modern functional languages, and ITPs make no exception of that. In Rocq, matches are a primitive operation made explicit in the abstract syntax. In Agda, functions are defined as case trees, allowing users to branch on terms, similarly to regular matches. \
 Lean diverges from the tradition. For users, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax. In practice, Lean's  elaborates pattern-matches down to the necessary inductive recursors, following technics described in @Goguen2006. Take for example a function of the form
 ```lean
 def is_var_zero : Var → Bool
@@ -440,14 +455,14 @@ Note that a `Unit` argument appears in the `var 0` branch. This happens because 
 
 In practice however, the pretty-printer recognises when an application has a match expression as its head, and thus prints it back to the user as a `match`. 
 
-When it comes to extending matches, we are presented with two options. The first one consists of remarking that matches are simply encoded using recursors. As such, we may simply partially map a given matcher and ask users to fill in the holes in it. 
+When it comes to extending matches, we are presented with two options. The first one consists of remarking that matches are simply encoded using recursors. As such, we may simply modularly map a given matcher and ask users to fill in the holes in it. 
 Another one would be to remark that extending a match amounts to adding new branches to it such that it covers the relevant new constructors in the extended inductive type. As such, we may ask users to write down the relevant branches, in a syntax similar to how normal matches are written.
 The former is easier to implement, it however noticeably burdens the user-experience. The second is more complex to implement, but makes the user-experience be on par with that or regular definitions. 
 After initially implementing the first option, we have converged towards relying on the second instead.
 
 The first option of asking users to fill in the proof-holes of the extended recursors that constructs a match is unreasonable, as it exposes far too many internal details. The definition of a given match can quickly become complex if it matches on multiple elements, needs to generalize some variables or contains some proofs of equality between the thing matched on and a given constructor in a branch. Extending any of this would make an unreadable mess for the users and is too detached from what a user would do had he just written this as a normal definition. Consider the case of `is_var_zero` being extended to `Term`. For both the `app` and `lam` case, the result is the same (i.e `false`). Producing this extension would require both extending the implementation of `match_1` (by adding a branch for `(t : Term) → motive (lam t)` and `(f t : Term) → motive (app f t)`), and adding the right arguments for the right-hand-side of said new branches (i.e `fun t => false` and `fun f t => false`). This means, in this specific example, that a user would need to fill in 4 holes, half of them having a non-trivial shape which mentions an arbitrary `motive` that did not appear in the concrete syntax of the original definition.
 
-The second option turns out to be the most ergonomic, although it makes the implementation work harder. In order to accomodate for this feature, when partially mapping the term of a given declaration, any application whose head is a matcher gets translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations. \
+The second option turns out to be the most ergonomic, although it makes the implementation work harder. In order to accomodate for this feature, when modularly mapping the term of a given declaration, any application whose head is a matcher gets translated into a metavariable hole, saving the original shape of the expression along the way. When trying to solve that metavariable, the original shape of the matcher is reconstructed, similarly to how the pretty-printer handles this expression. We then elaborate the new match branches provided by the user, and re-elaborate this into a new match-expression. Note that the implementation does *not* do any anti-quotations (i.e it does not construct concrete syntax from the original abstract syntax), and instead manipulates both the abstract syntax of the old matcher and the concrete syntax of the new branches in parallel, using Lean's existing internals for elaborating matchers. The end-result is a legible syntax for extending past declarations. \
 Take the example of `is_var_zero` getting extended to `Term`:
 ```lean
 def Term.is_var_zero extends is_var_zero where
@@ -455,7 +470,7 @@ def Term.is_var_zero extends is_var_zero where
     | app _ _ => false
     | lam _   => false
 ```
-First, the extension system detects that `is_var_zero.match_1 (fun _ => Bool) (fun _ => true) (fun_ => false)` is a matcher application and stores the information about its shape (i.e what the motive, discriminants and existing branches are). All of this information gets partially mapped to `Term` rather than the original `Var` (e.g `Var.var` become `Term.var` in the left-hand side of each branch). Then, the branches provided by the user (i.e `| app _ => false` and `| lam _ _ => false`) get elaborated as new branches to be added to the previous ones. This bundle of data is then passed out to the existing API Lean uses to elaborate normal pattern-matches, and produces a new match application that the old one then gets translated to.
+First, the extension system detects that `is_var_zero.match_1 (fun _ => Bool) (fun _ => true) (fun_ => false)` is a matcher application and stores the information about its shape (i.e what the motive, discriminants and existing branches are). All of this information gets modularly mapped to `Term` rather than the original `Var` (e.g `Var.var` become `Term.var` in the left-hand side of each branch). Then, the branches provided by the user (i.e `| app _ => false` and `| lam _ _ => false`) get elaborated as new branches to be added to the previous ones. This bundle of data is then passed out to the existing API Lean uses to elaborate normal pattern-matches, and produces a new match application that the old one then gets translated to.
 
 // Take the previous example of inductive extensions where `Term` extends `Var` in @ind_extension. Consider a function for printing a term of the type:
 // 
@@ -469,12 +484,12 @@ First, the extension system detects that `is_var_zero.match_1 (fun _ => Bool) (f
  
 == Extending recursive functions
 <recursion>
-Dependently-typed proof-assistants like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
+Dependently-typed ITPs like Rocq implement recursive functions using fixpoint constructs that are primitive to the abstract syntax, coupled with syntactic criterias for making sure recursive functions are well-founded. Lean, on the other hand, does not have such constructs. Instead, when a recursive function is defined, Lean tries to elaborate the function either into a structurally recursive term, using the recursor of whatever term decreases structurally in the recursive calls to write the function (à la @McBride1999), or tries to prove the function be well-founded, morally recursing over the accessibility predicate. 
 
-Because of this, directly partially mapping the body of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form: \ 
+Because of this, directly modularly mapping the body of a recursive definition is not great, since it exposes internal encodings to the user, and asks one to manipulate those directly to extend the definition. Thankfully, Lean usually provides auxiliary lemmas that exhibit the original shape of the function that was defined. One of them, `foo.eq_def`, is a theorem of the form: \ 
 `(a₁ : A₁) → ... → (aₙ : Aₙ)  → foo a₁ ... aₙ = <foo's definition>`
 
-As such, rather than use the original body of a definition, we can instead partial map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case with the extension from `Var.repr` to `Term.repr`.
+As such, rather than use the original body of a definition, we can instead modular map the right-hand side of a function's `eq_def` whenever available, and then reuse the existing elaboration APIs Lean provides to translate such syntacticaly recursive functions to structurally recursive or well-founded functions. This in effect means a user can adapt the termination measure of an extended definition, relative to the original's, a feature no other extension system provides to our knowledge. Said feature is of particular importance when extending a non-recursive type to a recursive one, as is the case with the extension from `Var.repr` to `Term.repr`.
 
 In particular, this allows us turn an originally non-recursive function into a recursive one if needed, as is the case with `Term.repr` extending `Var.repr`, or even change the termination measure that was originally used to adapt it to the new extended function.
 
@@ -554,7 +569,7 @@ The current set-up allows one to extend previous definitions iteratively, though
 	edge((1, -2), (2, -3), "->")
 }))
 
-The various vertices of the cube can be seen as various extensions of the initial vertex corresponding to STLC. However, an important feature of this cube is that all extensions of $lambda$ can be written as mergings of its 3 adjactent vertices, namely $lambda P$, $lambda 2$ and $lambda underline(omega)$ (e.g $lambda P 2$ corresponds simply to the merging of $lambda 2$ and $lambda P$). If one wanted to formalise each vertex of the cube before #LeanALaCarte, they would need to write down 8 different formalisations. With our current framework, they need only write down 1 formalisation and 7 extensions of that base formalisation. If our system was truly modular however, one would only need to write down the base formalisation and the 3 adjacent extensions, the rest being simply generated by merging the adjacent extensions. To make this possible, we extend #LeanALaCarte's handling of inductive types and definitions extensions and describe a way to make them composable, thus achieving true modularity. In practice, from a user perspective, all that gets added is the ability to define a `mod inductive` or `mod def` that `extends` more than one single declaration. 
+The various vertices of the cube are extensions of the initial vertex corresponding to STLC, each adding new features to the original type theory. However, an important feature of this cube is that all extensions of $lambda$ can be written as mergings of its 3 adjactent vertices, namely $lambda P$, $lambda 2$ and $lambda underline(omega)$ (e.g $lambda P 2$ corresponds to the merging of $lambda 2$ and $lambda P$). If one wanted to formalise each vertex of the cube before #LeanALaCarte, they would need to write down 8 different formalisations. With our current framework, they need only write down 1 formalisation and 7 extensions of that base formalisation. If our system was truly modular however, one would only need to write down the base formalisation and the 3 adjacent extensions, the rest being simply generated by merging the adjacent extensions. To make this possible, we extend #LeanALaCarte's handling of inductive types and definitions extensions and describe a way to make them composable, thus achieving true modularity. In practice, from a user perspective, all that gets added is the ability to define a `mod inductive` or `mod def` that `extends` more than one single declaration. 
 
 == Inductive modularity
 
@@ -568,7 +583,7 @@ mod inductive NatTerm extends Term where
 
 mod inductive BoolNatTerm extends BoolTerm, NatTerm
 ```
-The generated inductive `BoolNatTerm` will contain all of the basic `Term` constructors, as well as the additional ones provided by `BoolTerm` and `NatTerm`, will map the old inductives' constructions to the appropriate constructions of the new one.
+The merging of constructors happens nominally: when merging `BoolTerm` and  `NatTerm` together, #LeanALaCarte remarks that the `var`, `app` and `lam` constructors are in common between the two, and does not duplicate them in the merging. As such, the generated inductive `BoolNatTerm` will contain all of the basic `Term` constructors, as well as the additional ones provided by `BoolTerm` and `NatTerm`, and maps the old inductives' constructions to the appropriate constructions of the new one.
 
 == Definition modularity
 
@@ -583,7 +598,7 @@ mod def NatTerm.is_var_zero extends Term.is_var_zero where
     | zero | succ _ | natmatch _ _ _ => false
 ```
 
-We can partially map both declarations into functions talking about `BoolNatTerm`. Both of them will be partial in that the pattern-match will be incomplete in both cases (e.g the cases for `zero` will be missing from the partial mapping of `BoolTerm.is_var_zero`). However, both declarations will have the same shape modulo having different holes in different places. We make use of that and construct an algorithm that syntactically merges two expressions together, and throws an error if their shape diverges. In practice, in the case of `is_var_zero`, this means the respective matches get merged correctly, meaning there is no need for the user to add anymore information in order to merge the two declarations:
+We can modularly map both declarations into functions talking about `BoolNatTerm`. Both of them will be incomplete in that the pattern-match will be incomplete in both cases (e.g the cases for `zero` will be missing from the modular map of `BoolTerm.is_var_zero`). However, both declarations will have the same shape modulo having different holes in different places. We make use of that and construct an algorithm that syntactically merges two expressions together, and throws an error if their shape diverges. In practice, in the case of `is_var_zero`, this means the respective matches get merged correctly, meaning there is no need for the user to add anymore information in order to merge the two declarations:
 ```lean
 -- No `extend with` block needed to complete the match
 mod def BoolNatTerm.is_var_zero 
@@ -669,11 +684,11 @@ mod inductive NatTerm.Term
 ```
 ]]
 
-The total formalisation contains 12 inductive types as well as 92 definitions/theorems. Almost all of these were extended with no issue. The sole limiting factor in reaching the end of the formalisation relying only on extensions was with regards of the logical relation used in the original formalisation to prove strong normalisation: their initial formulation was too weak to prove SN on a system extended with natural numbers, and the theorems surrounding it relied heavily on definitional equalities of `LR` that could not be recovered after partially mapping it to something strong enough for our use-case. As such, the fundamental lemma itself had to be written as a normal lean `def` rather than an extension. A possible solution to circumventing such issues, based on the idea of removing the reliance of some definitional equalities on a given term, is discussed in the future works.
+The total formalisation contains 12 inductive types as well as 92 definitions/theorems. Almost all of these were extended with no issue. The sole limiting factor in reaching the end of the formalisation relying only on extensions was with regards of the logical relation used in the original formalisation to prove strong normalisation: their initial formulation was too weak to prove SN on a system extended with natural numbers, and the theorems surrounding it relied heavily on definitional equalities of `LR` that could not be recovered after modularly mapping it to something strong enough for our use-case. As such, the fundamental lemma itself had to be written as a normal lean `def` rather than an extension. A possible solution to circumventing such issues, based on the idea of removing the reliance of some definitional equalities on a given term, is discussed in the future works.
 
 To showcase the capacity to merge separate extensions, we produce another extension of STLC containing primitives for booleans, namely a boolean constructor in `Ty`, and term constructors for `true`, `false` and `if-then-else`. We then successfully construct a formalisation of STLC with both natural numbers and booleans by merging the two previous formalisations, thus proving the strong normalization of "STLC + Bool + Nat" fully modularly. 
 
-#aa[Maybe give some approximation of the numbers of lines saved ?]
+For lack of a better metric to measure the usability of #LeanALaCarte, we remark that, while the original, independent formalisation of STLC was written in ~1500 lines of code (LoC), the extensions for Nat and Bool respectively necessitated ~1000 Loc, including the duplicated code about `LR`. The last extension, which had both Nat and Bool, and didn't duplicate any code since it already extended a powerful enough logical relation, was written in only ~400 LoC in comparison.
 
 == STLC to CPS translation
 <CS2>
@@ -724,10 +739,8 @@ To showcase the capabilities of our framework, and provide a point of comparison
 
 
 = Related works
-
-We compare our approach with the recent literature with a special focus on approaches that adapt Data Types à la Carte to proof assistants. 
-
-*Data Types à la Carte* TODO
+<related-works>
+We compare our approach with the existing solutions with the modularity problem in ITPs. 
 
 "Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and expose the underlying internals of the encodings to the user.
 Having to deal with encodings of types rather than types adds
@@ -736,7 +749,7 @@ The lesson to include inductive data-types natively has been learned early by po
 
 On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the information given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
 
-*Rocqet* TODO
+Rocqet comes the closest in philosophy to our implementation, relying heavily on meta-programming and seemingly manipulating Rocq's AST directly. It however also doesn't allow for extensions after the fact, and their interface for extending past definitions is more restricted. Indeed, their framework only allows for constructing recursive functions with just one pattern-match at the top of the function, and nothing else. In particular, their proofs are written as recursive functions rather than as normal tactic-mode proofs. Their system also requires users to explicit the motive function of each induction in their system. All of this comes at a cost for the user-experience.
 
 None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalizations "after the fact". Instead, formalizations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
 
@@ -753,22 +766,27 @@ None of these systems, independently of whether they use encodings or the meta-p
 // On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the informations given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
 
 // None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
-#aa[TODO talk in details about Rocquet, Datatypes à la Carte, Meta-Theory à la Carte, Pyrosome, Rocq à la Carte]
+// #aa[TODO talk in details about Rocquet, Datatypes à la Carte, Meta-Theory à la Carte, Pyrosome, Rocq à la Carte]
 
 = Future work
 <FutureWorks>
-- Horizontal extensions
-- ETT to ITT translation to circumvent divergences in reduction behaviour between a term and its translation 
-- Zipper-like structure on expressions to traverse "up" and generalize a goal "after the fact"
+
+#LeanALaCarte shows how directly manipulating the core AST of an ITP without relying on encodings can work for producing modular formalisations. There are however further design decisions that remain to be experimented with, and which may open up the door for further improvements to the tool.
+
+First, as discussed in @extendInd, this system currently only handles vertical extensions to inductive types (i.e adding new constructors). The space of handling horizontal extensions has not been explored much in existing literature, the only system which, to our understanding, manages some form of horizontal extensions is Pyrosome. However, the scope of their extensions is much more limited and cares only about translation passes for compilers. 
+
+The central way in which extensions are added to the environment is by mapping constants to new (potentially incomplete) terms. For a translation using a constant found in the mapping context to work well, it is necessary that the reduction rules involving past constants also hold when mapping the constant to its associated term. This restriction is implicitly present when translating recursors and matches. However, as seen in the first case-study, it may sometimes be necessary for a formalisation to extend something (e.g the logical relation in the case study) with something possibly completely new, that may not hold the same definitional equalities. In order to do this, #LeanALaCarte could, in the future, have some mechanism for transforming an expression which relies on some particular reduction rules/definitional equalities into one that does not. This idea of removing such rules is not new, and appears in works producing translations from Extensional Type Theory to Intensional Type Theory (@Winterhalter2020), as well as works on removing definitional equalities from Lean using a similar translation (@vaishnav). The latter work could in particular possibly be adapted to our needs since it is already implemented in Lean.
+
+One challenge with extending independent formalisations is that shape of an original proof might not be fitting to prove an extended version of it. An important example of this issue is proofs by induction: it appeared a few times when testing our tool that an original proof that was done by induction needed, for the extended proof to work, to generalize some variables when doing said induction, such that the induction hypotheses would be stronger. Similarly, it could happen that part of a proof originally just needed a case split where the new proof would require the full power of induction. However, the existing interface of metavariable holes morally only allows us to add the necessary content at the tips of our proof tree, not modify the proof-tree in its generality. To extend this framework, we could imagine allowing for some "after the fact" transformations, such as generalisations or turning a case split into an induction, to the rest of the proof tree, allowing for a more comfortable experience of doing extensions of independent formalisations.
 
 #pagebreak()
 #bibliography("biblio.bib", title : "References", style : "citation-style.csl")
 #pagebreak()
 #show: appendix
-= Formal presentation of partial mappings
+= Formal presentation of modular maps
 <AppendixA>
 
-This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
+This section makes a partial attempt at justifying the implementation of modular maps in our system, and why it can be trusted to make well-formed terms.
 
 First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
 
@@ -785,9 +803,9 @@ $]
 #let modmap(Sigma : $Sigma$,Phi : $Phi$,Theta,Gamma,Delta,t1,t2,A1,A2) = $Sigma | Phi | Theta | Gamma => Delta tack.r t1 => t2 : A1 => A2$
 
 #figure(syntax_def,caption: "Syntax of our type theory")
-The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the partial maps.
+The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the modular maps.
 
-We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the partial mapping in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the partially mapped term, as well as the type of both the original term and the partially mapped one. The partial mapping acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their partial mapping. Furthermore, when partially mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
+We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the modular map in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the modularly mapped term, as well as the type of both the original term and the modularly mapped one. The modular map acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their modular map. Furthermore, when modularly mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
 
 #let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
 #let cons(Gamma,x,A) = $Gamma,x : A$
@@ -847,7 +865,7 @@ We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the
 
 #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
 
-The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
+The data contained in this judgement is enough to ensure any modularly mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
 #theorem[Given a mapping context $Phi$, if for each $((d : A) mapsto (Theta,t : A')) in Phi$:
 + $Sigma | epsilon | epsilon tack.r d : A$
 + $Sigma | Theta | epsilon tack.r t : A'$ 
