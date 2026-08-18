@@ -1,4 +1,4 @@
-explicit that the design of LeanALaCarte is a natural consequence of lean's design in the same way Rocq à la Carte's is for Rocq
+explicit that the design of Gemel is a natural consequence of lean's design in the same way Rocq à la Carte's is for Rocq
 Also explain that Rocq's design would simply not have worked in lean because of the absence of beta-iota cuts
 
 for report writing:

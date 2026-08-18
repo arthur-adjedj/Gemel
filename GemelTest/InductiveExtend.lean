@@ -1,10 +1,10 @@
 module
 
-public import LeanALaCarte.ModMap
-public import LeanALaCarte.CheckTranslation
-public import LeanALaCarte.ExtendInd
-public import LeanALaCarte.ModDef
-public import LeanALaCarte.ModularCommand
+public import Gemel.ModMap
+public import Gemel.CheckTranslation
+public import Gemel.ExtendInd
+public import Gemel.ModDef
+public import Gemel.ModularCommand
 public import Lean.Meta.Check
 public import Qq
 

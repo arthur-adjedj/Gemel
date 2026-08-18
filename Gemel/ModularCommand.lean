@@ -1,9 +1,9 @@
 module
 
-public meta import LeanALaCarte.Elab
+public meta import Gemel.Elab
 public meta import Lean.Elab.GuardMsgs
-public import LeanALaCarte.Elab
-public meta import LeanALaCarte.AuxMapping
+public import Gemel.Elab
+public meta import Gemel.AuxMapping
 
 public meta section
 

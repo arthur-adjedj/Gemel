@@ -1,7 +1,0 @@
-module
-import LeanALaCarte.ModMap
-import LeanALaCarte.CheckTranslation
-import LeanALaCarte.ModularCommand
-import LeanALaCarte.ExtendInd
-import LeanALaCarte.ModDef
-import LeanALaCarte.ModDef

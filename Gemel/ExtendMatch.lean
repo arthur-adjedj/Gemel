@@ -1,7 +1,7 @@
 module
 
-public import LeanALaCarte.ModMap
-public import LeanALaCarte.MergeExprs
+public import Gemel.ModMap
+public import Gemel.MergeExprs
 import all Lean.Elab.Match
 
 public meta section
@@ -296,7 +296,7 @@ def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause 
   trace[Modular.Match] "Elaborating matcher : {name} {Expr.mvar mvar}"
   let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
   unless Name.mkSimple matchName = name do
-    throwErrorAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
+    logWarningAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
   let mut matcherBundles := #[]
   withTraceNode `Modular.Match (fun _ => return "Generating Matcher bundles") do←
     for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExts do

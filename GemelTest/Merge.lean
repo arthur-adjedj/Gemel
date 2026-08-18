@@ -1,4 +1,4 @@
-import LeanALaCarte
+import Gemel
 
 inductive A where
   | a : A → A

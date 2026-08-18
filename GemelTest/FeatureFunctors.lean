@@ -1,4 +1,4 @@
-import LeanALaCarte
+import Gemel
 
 inductive Var where
   | var : Nat → Var

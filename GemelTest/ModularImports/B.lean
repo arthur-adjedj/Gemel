@@ -1,4 +1,4 @@
-import LeanALaCarteTest.ModularImports.A
+import GemelTest.ModularImports.A
 
 set_option trace.Modular.Elab true
 

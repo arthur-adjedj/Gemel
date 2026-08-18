@@ -1,10 +1,10 @@
 module
 
 public meta import Lean.Elab.PreDefinition.Main
-public meta import LeanALaCarte.CollectAuxDefs
+public meta import Gemel.CollectAuxDefs
 public meta import Lean.Meta.Tactic.Try.Collect
-public import LeanALaCarte.AuxMapping
-public import LeanALaCarte.ExtendMatch
+public import Gemel.AuxMapping
+public import Gemel.ExtendMatch
 public meta import Std.Do.Triple.SpecLemmas
 
 public meta section

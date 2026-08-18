@@ -1,8 +1,8 @@
 module
 
-public import LeanALaCarte.Elab
-public meta import LeanALaCarte.Elab
-public meta import LeanALaCarte.Util
+public import Gemel.Elab
+public meta import Gemel.Elab
+public meta import Gemel.Util
 
 public meta section
 

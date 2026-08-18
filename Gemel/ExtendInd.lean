@@ -5,8 +5,8 @@ public meta import Lean.Meta.Constructions.CtorElim
 public meta import Lean.Elab.MutualInductive
 public meta import Lean.Meta.IndPredBelow
 public meta import Lean.Meta.Injective
-public import LeanALaCarte.AuxMapping
-public import LeanALaCarte.ModMap
+public import Gemel.AuxMapping
+public import Gemel.ModMap
 
 public meta section
 

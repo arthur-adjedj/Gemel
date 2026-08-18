@@ -1,6 +1,6 @@
 module
 
-public import LeanALaCarte.ModMap
+public import Gemel.ModMap
 
 public meta section
 

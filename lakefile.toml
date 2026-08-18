@@ -1,13 +1,13 @@
-name = "LeanALaCarte"
+name = "Gemel"
 version = "0.1.0"
-defaultTargets = ["LeanALaCarte"]
-testDriver = "LeanALaCarteTest"
+defaultTargets = ["Gemel"]
+testDriver = "GemelTest"
  
 [[lean_lib]]
-name = "LeanALaCarte"
+name = "Gemel"
 
 [[lean_lib]]
-name = "LeanALaCarteTest"
+name = "GemelTest"
 
 [[require]]
 name = "Qq"

@@ -1,8 +1,8 @@
-import LeanALaCarte.ModMap
-import LeanALaCarte.CheckTranslation
-import LeanALaCarte.ExtendInd
-import LeanALaCarte.ModularCommand
-import LeanALaCarte.ModDef
+import Gemel.ModMap
+import Gemel.CheckTranslation
+import Gemel.ExtendInd
+import Gemel.ModularCommand
+import Gemel.ModDef
 
 --Utils for later
 section

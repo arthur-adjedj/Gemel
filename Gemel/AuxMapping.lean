@@ -1,11 +1,11 @@
 module
 
-public import LeanALaCarte.Elab
+public import Gemel.Elab
 public meta import Lean.Meta.Eqns
 public meta import Lean.Meta.Match.MatchEqsExt
-public meta import LeanALaCarte.Elab
+public meta import Gemel.Elab
 public import Lean.Meta.Match.MatchEqsExt
-public import LeanALaCarte.ModMap
+public import Gemel.ModMap
 
 public meta section --TODO be less public
 

@@ -1,8 +1,8 @@
 
-import LeanALaCarte.ModDef
-import LeanALaCarte.ExtendInd
-import LeanALaCarte.CheckTranslation
-import LeanALaCarte.ModularCommand
+import Gemel.ModDef
+import Gemel.ExtendInd
+import Gemel.CheckTranslation
+import Gemel.ModularCommand
 import Lean
 
 open Lean Elab Command Meta

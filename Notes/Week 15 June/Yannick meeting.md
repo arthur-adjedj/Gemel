@@ -4,7 +4,7 @@ Least important first:
 Spent friday (12th) incorporating feedback from the rehearsal on my slides, I then spent my slides to Thibaut, Meven and Kenji on monday (15th) and spent monday fixing my slides
 
 
-Spend the first part of the week consolidating parts of the LeanALaCarte code, especially around feature functors. The syntax to construct feature functors is now finally exposed to the users, and having it be available gave me thoughts about how to go moving forward.
+Spend the first part of the week consolidating parts of the Gemel code, especially around feature functors. The syntax to construct feature functors is now finally exposed to the users, and having it be available gave me thoughts about how to go moving forward.
 
 I don't believe feature functors to be a sensible basis for composability, even more so when it comes to defining "feature definitions" (I still don't know how to call these), i.e the possibility of composing definitions done on extensions. To make sure we use all of Lean's existing scaffolding, staying in the territory of "real" inductive types and declarations is extremely useful. The main (apparent) issue with that until now was diamonds in modular code. I think that is solvable though. 
 
