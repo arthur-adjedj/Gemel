@@ -52,7 +52,7 @@
 #show: thm-rules
 
 #set text(size:11.5pt)
-#set page(numbering: "1", margin: 8em)
+#set page(numbering: "1", margin: 6em)
 #set par(first-line-indent: 1.5em, justify: true)
 #set cite(form: "prose", style: "citation-style.csl",)
 #set quote(block: true)
@@ -109,54 +109,55 @@
 
 // #abstract(margin: 0.3cm)[#emph[*Note.* This research topic has been collabaratively developed by Arthur Adjedj and Yannick Forster. Arthur Adjedj was supervised by Yannick Forster and hosted in the Cambium team at the Centre Inria de Paris during a five-month internship.]]
 
-#aa[TODO link to repo and case studies somewhere]
 = Summary
 
 == General context
 // What is the report about ? Where does the problem come from ? What is the state of the art in that area ?
-Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and mechanical verification of formal proofs. ITPs can be used to provide a very high level of guarantees for software (in particular the complete absence of bugs), and several projects make use of ITPs to verify real-world software, such as the CompCert C compiler (@Leroy-Compcert-CACM), the sel4 operating systems kernel (@sel4), and AWS' authorization policy language, Cedar (@Cedar). They have also been used successfully to formalize landmark theorems in mathematics such as the Four Colour Theorem or the Feit Thompson theorem, and the use of ITPs is on the rise in mathematics departments, with big mathematical developments like Lean's Mathlib library (@mathlib2020) getting more and more public attention (@quantabook). 
+Interactive Theorem Provers (ITPs), also known as proof assistants, are tools which allow for the development and verification of formal proofs. 
+ITPs can be used to provide very strong gaurantees for software-in particular the complete absence of bugs-, which is why it's the tool of choice of several projects to verify real-world softare (@Leroy-Compcert-CACM, @Cedar). Beyond their use for software verification, ITPs have been used to formalize landmark theorems in mathematics (@Gonthier2007, @Gonthier2013), and their use is on the rise in the mathematical community, with big developments (@mathlib2020) getting more and more public attention (@quantabook). 
 
-Like other programming languages, ITPs fall victim to the the fact that reusing definitions can be non-trivial. This is generally referred to as the *expression problem* (@Wadler98): 
+ITPs have particular issues regarding reusability of its definitions. For example, @Adjedj2024 formalized a dependent type theory some years ago. Several projects have since sprouted from this work, forking the 30 thousand lines of code repository to extend on the type system formalized (@Pedrot2024, @Subtyping2024), thus duplicating the codebase. In parallel, the initial repository got refactored to make the formalisation cleaner and easier to work on. Because of this code duplication, the benefits of the refactoring never reached the extensions, and would now take a lot of efforts to integrate into them. \
+The issue of modularity and code maintenance is not isolated to ITPs, and is coined as the *expression problem* (@Wadler98) in the sphere of programming languages: 
 #quote[“The goal is to define a datatype by cases, where one can add new cases to the datatype and new functions over the datatype, _without recompiling existing code_.”] 
-Reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). The issue is exacerbated in ITPs, where in addition to programs, one needs to adapt proofs and dependently typed programs as well. \
-The expression problem has found many tentative solutions, both in the space of programming languages and that of ITPs. In the latter (which we focus on for the rest of the paper), solutions range from making various encodings in which some notion of modularity comes internally "for free" (@Delaware2013, @Pyrosome). Some other rely on meta-programming to achieve their goals, with limited results (@Forster2020, @Rocqet). We discuss each tool's limitations in the related works (@related-works)
+Reusing and adapting existing data structures and programs modularly is a challenge for which few solutions have been produced over the years in industrial programming languages (@ObjAlgEP). The issue is exacerbated in ITPs, where in addition to programs, one needs to adapt proofs as well. In ITPs (which we focus on for the rest of the report), solutions range from making various encodings-such as Church encodings (@Jansen2013)-in which some notion of modularity comes internally "for free" (@Delaware2013, @Pyrosome), to relying on meta-programming to achieve their goals (@Forster2020, @Rocqet). Both approaches have had limited results until now, the former in part due to a lack of expressivity from the encodings used, the latter in part due to limitations in the meta-programming tools available during those developments. We discuss each tool's limitations in more depth in the related works (@related-works)
 
 
 == Research problem
 
 // What specific question(s) have you studied ? What motivates the question ? What are its applications/consequences ? Is it a new problem ? Why did you choose this problem ?
 
-The original expression problem from 1998 does not fit the constraints of modern ITPs, in particular with regards to avoiding recompiling existing code. Indeed, computers have since become fast enough, and memory storage big enough, that the constraints of compilation time or executable sizes are not central issues anymore. We instead focus our efforts on reducing the burden of maintainance by providing better modularity in ITPs. As such, our practical goal is to allow for defining datatypes as extensions of others through the addition of new constructors, as well as allow for constructing extensions of theorems and definitions such that the extensions may manipulate the extended datatypes rather than the original ones. Such extensions should be doable on independent formalisations that were not made with our framework's constraints in mind.
+The original expression problem from 1998 does not fit the constraints of modern ITPs, in particular with regards to avoiding recompiling existing code. Indeed, computers have since become fast enough, and memory storage big enough, that the constraints of compilation time or executable sizes are not central issues anymore. We instead focus our efforts on reducing the burden of maintainance by providing better modularity in ITPs. As such, we focus on allowing users to extend datatypes by adding new constructors to them, as well as extending theorems and definitions which rely on them to hold for the new datatype. Such extensions should be doable on independent formalisations that were not made with our framework's constraints in mind.
 
 
-== Your contribution
+== Our contribution
 // What is your answer to the research problem ? Please remain at a high level ; technical details should be given in the main body of the report. Pay special attention to the description of the scientific approach. 
 
-We present #Gemel, a new library for writing modular code, written in the Lean 4 proof assistant. This library aims to provide a user-experience that is as comfortable as writing regular non-modular code. This objective is achieved through the avoidance of any use of internal encodings, manipulate Lean's concrete and abstract syntax trees directly, making use of the powerful meta-programming capabilities of the language. In particular, #Gemel allows one to extend a previous formalization that was not intended for such uses, which we consider to be a crucial feature for the tool's adoption for real-world use-cases.
+We present #Gemel#footnote[https://github.com/arthur-adjedj/Gemel], a new framework for writing modular code, written in the Lean 4 proof assistant. This library aims to provide a user-experience as similar to writing regular non-modular code as possible. This objective is achieved by avoiding the use of any internal encodings, manipulating Lean's concrete and abstract syntax trees directly, and making use of the powerful meta-programming capabilities of the language. #Gemel declarations integrate all the features of regular Lean declaration such as dependent pattern-matching, tactic-based proofs and well-founded recursion. #Gemel also allows extending a previous formalization that was not intended for extensions in mind, which we consider to be a crucial feature for the tool's adoption for real-world use-cases.
 
 == Arguments supporting its validity
 
 // What is the evidence that your solution is a good solution ? (Experi- ments ? Proofs ?) Comment on the robustness of your solution : does it rely on assumptions, and if so, to what extent ?
 
-To demonstrate the capacities of our system, we present two case-studies implemented using our tool. The first takes an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extends it with new constructions, modularly proving key results of the original formalisation, such as strong normalisation, about the extended calculuses. Formalisations of STLC form a recurring case-study in previous works on modularity in ITPs, ours is the only one showing the capacity to build such extended formalisations "after the fact", i.e on an independent formalisation that was not made with modularity in mind. The second case study consists of a construction of STLC and a Call-Passing Style (CPS) calculus, as well as a translation pass from the former to the latter. The formalisation then extends both STLC and CPS with various constructions, and extends the translation pass between the respective extensions. This reproduces the central case study in produced for @Pyrosome in our own framework, without the need for any encodings. \ 
+To demonstrate the capacities of our system, we present two case-studies#footnote[https://github.com/arthur-adjedj/lean-stlc/]#footnote[https://github.com/arthur-adjedj/PyrosomeLeanCaseStudy/] implemented using #Gemel. 
+
+The first takes an existing, independent formalization (@leanstlc) of the Simply-Typed Lambda Calculus (STLC), and extends it with new constructions, modularly extending key results of the original formalisation, such as strong normalisation, about the extended calculusi. Formalisations of STLC form a recurring case-study in previous works on modularity in ITPs, ours is the only one showing the capacity to build such extended formalisations "after the fact", i.e on an independent formalisation that was not made with modularity in mind. 
+
+The second case study consists of a construction of STLC and a Continuation-Passing Style (CPS) calculus, as well as a translation pass from the former to the latter. The formalisation then extends both STLC and CPS with various constructions, and extends the translation pass between the respective extensions. This reproduces the central case study produced by @Pyrosome in our own framework, without the need for any encodings. 
+
 Together, these two case-studies serve to show that the fundamentally basic ideas behind #Gemel are powerful enough to scale up to all features provided by previous tools, as well as allowing one to to extend an independent formalisation after the fact, which is unique to our framework. 
 
 == Summary and future work
 
-We contribute a ready-to-use tool to easily extend past formalisation into new ones. That tool still exposes some limitations and a potential for further improvements which are discussed in the future works (@FutureWorks), but is fairly complete in its original objective, as shown by our case-studies. A good next step would be to make the tool mature enough to be used in real world cases such as Lean's computer science library CSLib (@cslib) , where e.g various type-systems formalisation could benefit from the tool.
+We contribute a ready-to-use tool to easily extend formalisation. That tool is fairly complete in its original objective, as shown by our case-studies, though it exposes some limitations and a potential for further improvements. Improvements include the capacity to handle horizontal extensions, i.e the ability to add new fields to an existing constructor of a datatype, rather than just the ability to add new constructors entirely. A good next step would be to make the tool mature enough to be used in real world cases such as Lean's computer science library CSLib (@cslib) , where e.g various type-systems formalisation could benefit from the tool.
 #pagebreak()
 // What did you contribute to the area ? What comes next ? What is a good next step or question ?
 
-// #aa[What did you contribute to the area ? What comes next ? What is a good next step or question ?]
+
 // We present #Gemel, a new library, written in the Lean 4 proof assistant, which exposes new syntax for users to extend previous data-types and declarations modularly, using meta-programming techniques. This in particular allows one to extend a previous formalization that was not intended for such uses. To demonstrate this, we present two case-study,with one taking an existing, independent formalization of the Simply-Typed Lambda Calculus (STLC), and extending it with new constructions, modularly proving the strong normalization of the new calculuses, and another reimplementing Pyrosome's main case-study, which builds a formalization of STLC and a translation pass to a call-passing-style (CPS) calculus, as well as extensions for both STLC and CPS, with extended translations between their respective extensions.
 
 // Formal presentation of extensions
 // 
 // This section presents the technical details of the Gemel implementation. The main three contributions are 1. A system for partially mapping terms 2. a DSL command for defining an inductive type as an extension to another based on that produces the appropriate partial mappings between the two 3. a DSL for defining definitions/theorems as extensions of others, thus reusing the appropriate information "after the fact".
-
-// #aa[TODO section intro]
-// #aa[For each new thing presented, show the new syntax and how it can be used in practice. Build up an example over the sections using new tools progressively]
-
 
 
 = Representation of modular syntax
@@ -166,7 +167,10 @@ We first examine existing solutions to producing modular code in ITPs, showing t
 
 == Existing solutions
 
-Solutions to the modularity problem in ITPs appear in two flavors: some tools work by encoding the datatypes manipulated in a framework which natively allows for some form of modularity (@Delaware2013, @Pyrosome), others rely on meta-programming to achieve their goals. Encodings have yet to become viable in dependently-typed ITPs, they incur an abstraction cost for users by leaking internal details, and cannot yet encode every datatypes that are native to such systems. On the meta-programming side, Rocqet (@Rocqet) and Rocq à la carte (@Forster2020) both expose some additional syntax for the user to write in order to produce modular formalisms. Rocqet's design focuses on compiler verification specifically, whereas Rocq à la Carte aims to be a general framework for modular work, a scope that our project shares. We focus here on Rocq à la Carte's design here, with a deeper explanation of other frameworks in the Related Works (@related-works).
+Solutions to the modularity problem in ITPs appear in two flavors: some tools work by encoding the datatypes manipulated in a framework which natively allows for some form of modularity (@Delaware2013, @Pyrosome), others rely on meta-programming to achieve their goals. \ 
+Encodings have yet to become viable in dependently-typed ITPs. All existing implementations incur an abstraction cost by leaking internal detail, i.e users must manipulate these encodings explicitly rather than interact with them the same way they would with regular inductive types. Furthermore, existing encodings are yet to be expressive enough to encode every datatypes that are native to such systems. Because of this, the possibility to allow for extensions after the fact, which would entail translating an initial formalisation into something relying on the needed encoding, becomes more limited and challenging. \ 
+On the meta-programming side, Rocqet (@Rocqet) and Rocq à la carte (@Forster2020) both expose some additional syntax for the user to write in order to produce modular formalisms.
+Rocqet's design focuses on compiler verification specifically, structuring code around building and extending "families", i.e bundles of inductive definitions and fixpoint functions, to construct translation passes between the extende . Rocq à la Carte aims to be a general framework for modular work, a scope that our project shares. We focus here on Rocq à la Carte's design here, with a deeper explanation of other frameworks in the Related Works (@related-works).
 
 Rocq à la Carte's design centers on manipulating user-defined datatypes constructed through the merging of inductive functors:
 ```lean
@@ -197,43 +201,20 @@ def Exp₁.count : Exp₁ → Nat -- Error: Failed to show termination
 ```
 However, replicating (and extending on) this technique to bring modular tooling in the Lean proof assistant is not really feasable. The previous code snippet would work in Rocq, but throws a non-termination error in Lean. Indeed, functions in ITPs are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Every popular ITP ensures this restriction differently (this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq's system for detecting structural recursion works up to reduction, whereas Lean doesn't. This feature is paramount to Rocq à la Carte's method for producing modular code, and cannot be easily replicated in Lean due to divergences in the Lean's design decisions.
 
-== Our solution
-One core objective of #Gemel is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making use of the existing metaprogramming APIs provided by Lean in order to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *modular map*. A term may get modularly mapped to something which contains holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the next section. 
+== Our solution #aa[preview of the user interface ?]
+One core objective of #Gemel is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making use of the existing metaprogramming APIs provided by Lean in order to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *modular map*.#aa[talk conceptually about our solution first, technically later] A term may get modularly mapped to something which contains holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the next section. 
 // An important property for such a translation should be that, given a well-typed term (in a given context), its partially mapping should itself also be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
 A modular map is dependent on a *mapping context*. This context maps some constants in the global environment to new terms.
 Using this mapping context, the algorithm for modular maps is straightforward: when modularly mapping a constant present in the mapping context, map said constant to the term it maps to. Otherwise, translate terms structurally (e.g $⟦ λ a : A. t  ⟧ ::= λ a : ⟦ A ⟧. ⟦ t ⟧$). The following sections showcase how #Gemel make use of this system of modular maps to achieve its goal of providing a user-friendly system of modular extensions.
-// The full presentation about how such modular maps are implemented are described in @AppendixA. 
-
-
-// #aa[This whole part needs to be completely rewritten. Rather than provide a technical presentation, this section should motivate the idea of having such mappings, by explaining eg that Rocq à la Carte's solution to modularity wouldn't work in Lean, and that as such, constructing modularity by relying on meta-programming is evidently the right way to go.]
-// #aa[This whole thing mainly needs a leading example, and a clear introduction of what the following terms mean:
-// - partial mapping
-// - mapping context  ]
-
-// This section makes a partial attempt at justifying the implementation of partial mappings in our system, and why it can be trusted to make well-formed terms.
-
-// First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
-
-
-// #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
-
-// The data contained in this judgement is enough to ensure any partially mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
-// #theorem[Given a mapping context $Phi$, if for each $((d : A) mapsto (Theta,t : A')) in Phi$:
-// + $Sigma | epsilon | epsilon tack.r d : A$
-// + $Sigma | Theta | epsilon tack.r t : A'$ 
-// + $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, 
-// Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
-// Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
-// #aa[TODO: actually prove this #emoji.face.woozy]
 
 = Inductive Types and recursors
 <ind_extension>
 
 We hereon make use of our system of modular maps to provide users with ways to modularly extend previously defined programs and formalizations. From a user perspective, a Lean program mainly consists of defining new datatypes types, definitions and theorems. The main way to construct new datatypes in Lean is by defining new inductive types (@Coquand1990). This section focuses on how #Gemel allows users to extend inductive definitions through addition of new constructors. 
 
-== What is an inductive type
+== Inductive types in type theory
 // With this framework constructed, we may now use it to construct practical partial mappings, by producing useful mapping contexts. Since most constants in proof assistants are either inductive constructions (i.e an inductive type, a constructor or a recursor), or a declaration (i.e a definition or theorem), we first focus on inductive extensions, and then look at how they can be used to construct useful declaration extensions.\
-First, let us look at what an inductive type is. We will not focus on the semantic meaning of inductive types so much as their syntax here, since what we care about is exposing new syntax to users. The general intuition of an inductive type is that it is a regular datatype, of which terms can be constructed by using recursors, and which can be eliminated through the use of a recursor, i.e an induction principle. \ 
+First, let us look at what an inductive type is. The general intuition of an inductive type is that it is a regular datatype, of which terms can be constructed by using recursors, and which can be eliminated through the use of a recursor, i.e an induction principle. \ 
 Inductive types are shaped as follows:
 
 #let ctor = $bold("ctor")$
@@ -246,7 +227,7 @@ space space space space ...\
 space | ctor_n : accent((a_n : A_n),→) → I space accent(p,→) space accent(d_n,→) $
 
 An inductive type is composed of a number of different components: A list of parameters $accent((p : P),->)$ which are uniform in that they stay the same in every occurrence of the type in its constructors, a telescope of indices $accent((i : I),->)$ that may vary in each occurrence, and a list of constructors for this type. Each constructor contains a list of fields  living over the context formed by the parameters, and instantiates the indices of the inductive type they inhabit in a context containing those fields. Basic examples of inductive types include the natural numbers, lists, and vectors (i.e list indexed by their lengths):
-// #aa[Perhaps replace the leading examples for the entire inductives section with something else, like Lists extended to at-most-binary trees]
+
 #align(center)[
 #grid(columns: 2)[
 ```lean
@@ -279,15 +260,9 @@ NatRec #P #PZ #PS #Z arrow.r.squiggly #PZ
 NatRec #P #PZ #PS (#S n) arrow.r.squiggly #PS n space (NatRec #P #PZ #PS n)
 $
 
-// #aa[Perhaps explain the semantics of inductive types as least fixed-point of a given functor, and in the next section why the fact that one inductive extends the other is semantically trivial ?]
-// Semantically speaking, an inductive type can be seen as the least-fixed point of a (strictly positive) functor. For example, the definition of `Nat` can be interpreted as the least-fixed point of the functor `FNat A := 1 + A`. This is a useful insight for justifying why 
 
-== Our approach towards extending inductive types
+== Inductive types in #Gemel
 <extendInd>
-// #aa[Structural sentences, extend that this is our work, not just exposition, expand on the decision to talk about extending a type with new constructors. Motivating example comes too late it feels like ?]
-// 
-// #aa[We consider ways in which users might want to extend one inductive type into another. Consider the following example of Var/Term, instantiate the translations to the specific example rather than be so general.]
-// #aa[Make it much more obvious that #Gemel can really only manage adding new ctors]
 
 With the general structure of an inductive type in mind, we can now consider ways in which one may extend an inductive type into another. #Gemel provides a new Lean command which, given an inductive and new constructors, constructs another inductive type which extends the original one with these new constructors, adding the relevant mappings between from the first to the second. The syntax is as follows:
 ```lean
@@ -305,12 +280,13 @@ mod inductive Term extends Var where
   | lam : Term → Term
   | app : Term → Term → Term
 
+#print Term
 /- inductive Term : Type
    constructors:
      Term.lam : Term → Term
      Term.app : Term → Term → Term
      Term.var : Nat → Term -/
-#print Term
+
 ``` 
 Similarly, one may want to extend the lambda-calculus with other constructs, such as booleans. Since `Term` is also just an inductive type, it can itself be extended with new constructions:
 ```lean
@@ -334,8 +310,21 @@ Term.rec : (motive : Term → Type) → ((a : Nat) → motive (var a)) →
   (t : Term) → motive t
 ```
 
-We see that the motive, existing minor for `var` and the major `t` can be translated into a `Term.rec` call by simply adding new holes for the `lam` and `app` minors. The translation goes as follows: \ `⟦Var.rec motive pvar t⟧ => Term.rec ⟦ motive ⟧ ⟦ pvar ⟧ ?m1 ?m2 ⟦ t ⟧ `
-Note that metavariable holes such as `?m1` and `?m2` cannot, in general, be resolved automatically by Lean, and are instead meant to be resolved by the user, the next section on definitions extensions discusses the interface provided by #Gemel for that purpose in more details.
+Consider a pretty-printing function for `Var`, defined explicitly using the type's recursor: 
+```lean
+def Var.repr (t : Var) : String := Var.rec (fun _ => String) (fun x => s!"{x}") t
+```
+We see that the motive, existing minor for `var` and the major `t` can be translated into a `Term.rec` call as follows: 
+```lean
+def Term.repr (t : Term) : String := Term.rec (fun _ => String) (fun x => s!"{x}") ?lam ?app t
+```
+Where `?lam` and `?app` are metavariables, i.e holes that still need to be resolved for the definition to be valid. These holes correspond to the branches for the `lam` and `app` cases respectively. The function can then be completed by giving a value to each hole:
+```lean
+def Term.repr (t : Term) : String := Term.rec (fun _ => String) (fun x => s!"{x}") (fun _ sf => s!"λ {sf}")(fun _ _ sf st => s!"{sf} {st}") t
+```
+More generally, `Var.rec` can be modularly extended:
+\ `⟦Var.rec motive pvar t⟧ => Term.rec ⟦ motive ⟧ ⟦ pvar ⟧ ?lam ?app ⟦ t ⟧ ` \ 
+Note that metavariable holes such as `?lam` and `?app` cannot, in general, be resolved automatically by Lean, and are instead meant to be resolved by the user, the next section on definitions extensions discusses the interface provided by #Gemel for that purpose in more details.
 
 To generalize the previous example, consider an inductive `A` of parameters $accent((p : P),→)$, indices$ accent((i : I),→)$ and constructors $accent(ctor,→)$, as well as another type `B` with the same parameters and indices, as well as the same constructors + a new constructor $newctor$. Extending this to manage adding multiple constructors is trivial, we omit this detail here. We can map the type A to B and respectively every constructor of A to B's. The last missing piece to this 
 translation is the recursor. \ 
@@ -352,8 +341,6 @@ This mapping is automatically produced and added to the mapping context upon con
 Additionally to the primitives surrounding an inductive type, Lean also automatically produces more than a dozen auxiliary declarations, meant to make the automation and user-experience friendlier. For example, upon defining an inductive type `Foo`, Lean will, for every constructor `ctor`, define a helper lemma `Foo.ctor.inj` which proves the injectivity property of said constructor.
 In order to avoid making users define mappings between auxiliary declarations produced by the original and the extended type by hand, #Gemel automatically generates said mappings automatically (e.g `Var.var.inj` gets automatically mapped to `Term.var.inj` in the previous example).
 
-
-#aa[example of the next repr function but written using recursors]
 // that need to be mapped between the two types carefully, namely, given an inductive type `Foo`, Lean constructs the following list of auxiliary declarations, which each need get translated with particular care in #Gemel:
 // - `Foo.recOn`: an alternative shape for the recursor
 // - `Foo.casesOn`: a recursor with no recursive hypotheses
@@ -366,11 +353,11 @@ In order to avoid making users define mappings between auxiliary declarations pr
 = Pattern matching and recursion
 
 Our framework now allows for inductive types to be extended through the addition of new constructors. This section focuses on how declarations (i.e definitions and theorems) can be extended and modularly mapped correctly. \
-Going back to the previous example of `Term` extending `Var`, consider a function `Var.repr`, mapping a term of type `Var` to a string:
+Going back to the previous example of `Term` extending `Var`, consider a function `Var.repr`, this time written idiomatically using pattern-matching rather than a recursor:
 
 ```lean
 def Var.repr : Var → String
-  | var n => s!"#{n}"
+  | var x => s!"#{x}"
 ```
 
 Currently, a user would need to redo the `var` case in order to define a `Term.repr` function, e.g as follows:
@@ -395,7 +382,7 @@ Now, any change done to `Var.repr` would also change downstream of it for `Term.
  
 The general elaboration process of that syntax is as follows. Given a declaration \ (e.g `Var.repr`), one may modularly map its body into a function over the extended type (here `Term`). Once that it done, users may be asked to fill in any remaining holes in the translated body to construct a well-formed declaration. Once that is done, the new declaration (here `Term.repr`) can be safely added to the global environment of declarations, and a mapping from `Var.repr` to `Term.repr` can be added to the mapping context.
 
-In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion are to be managed. These two features are handled very differently by popular dependently-typed ITPs. In Rocq, matches and fixpoints are distinc primitive operations made explicit in the abstract syntax. Agda bundles these two notions in a single top-level primitive called a case-tree, where each function (and pattern-match present in a function) gets translated into a top-level case-tree. In both systems, termination-checking is a syntactic criteria that goes through a given fixpoint definition and checks that every recursive call in a function is ran on a strict subterm. Lean diverges from the tradition of having primitive operations, both for pattern-matching and for recursion, and elaborates both down to inductive recursor calls, following and extending on technics described in @Goguen2006 and @Cockx2017. For pattern-matching, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax. Take for example a function of the form
+In practice, implementing all of this in Lean has exposed some complications which necessitates careful design decisions, in particular with regards to how pattern-matching and recursion are to be managed. These two features are handled very differently by popular dependently-typed ITPs. In Rocq, matches and fixpoints are distinct primitive operations made explicit in the abstract syntax. Agda bundles these two notions in a single top-level primitive called a case-tree, where each function (and pattern-match present in a function) gets translated into a top-level case-tree. In both systems, termination-checking is a syntactic criteria that goes through a given fixpoint definition and checks that every recursive call in a function is ran on a strict subterm. Lean diverges from the tradition of having primitive operations, both for pattern-matching and for recursion, and elaborates both down to inductive recursor calls, following and extending on technics described in @Goguen2006 and @Cockx2018. For pattern-matching, it may appear as though Lean does have match expressions: they are part of the concrete syntax and get appropriately pretty-printed when looking back at the abstract syntax. Take for example a function of the form
 ```lean
 def is_var_zero : Var → Bool
   | var 0     => true
@@ -428,7 +415,7 @@ def Term.is_var_zero extends is_var_zero where
     | app _ _ => false
     | lam _   => false
 ```
-First, the extension system detects that `is_var_zero.match_1 (fun _ => Bool) (fun _ => true) (fun_ => false)` is a matcher application and stores the information about its shape (i.e what the motive, discriminants and existing branches are). All of this information gets modularly mapped to `Term` rather than the original `Var` (e.g `Var.var` become `Term.var` in the left-hand side of each branch). Then, the branches provided by the user (i.e `| app _ => false` and `| lam _ _ => false`) get elaborated as new branches to be added to the previous ones. This bundle of data is then passed out to the existing API Lean uses to elaborate normal pattern-matches, and produces a new match application that the old one then gets translated to.
+First, the extension system of #Gemel detects that  `is_var_zero.match_1 (fun _ => Bool) x (fun _ => true) (fun_ => false)` is a matcher application and stores the information about its shape (i.e what the motive, discriminants and existing branches are). All of this information gets modularly mapped to `Term` rather than the original `Var` (e.g `Var.var` become `Term.var` in the left-hand side of each branch). Then, the branches provided by the user (i.e `| app _ => false` and `| lam _ _ => false`) get elaborated as new branches to be added to the previous ones. This bundle of data is then passed out to the existing API Lean uses to elaborate normal pattern-matches, and produces a new match application that the old one then gets translated to.
 
 // Take the previous example of inductive extensions where `Term` extends `Var` in @ind_extension. Consider a function for printing a term of the type:
 // 
@@ -541,7 +528,7 @@ mod inductive NatTerm extends Term where
 
 mod inductive BoolNatTerm extends BoolTerm, NatTerm
 ```
-The merging of constructors is nominal and type-driver: when merging `BoolTerm` and  `NatTerm` together, #Gemel remarks that the `var`, `app` and `lam` constructors are in common between the two, confirms their types are compatible, and does not duplicate them in the merging. As such, the generated inductive `BoolNatTerm` will contain all of the basic `Term` constructors, as well as the additional ones provided by `BoolTerm` and `NatTerm`, and maps the old inductives' constructions to the appropriate constructions of the new one.
+The merging of constructors is nominal and type-driven: when merging `BoolTerm` and  `NatTerm` together, #Gemel remarks that the `var`, `app` and `lam` constructors are in common between the two, confirms their types are compatible, and does not duplicate them in the merging. As such, the generated inductive `BoolNatTerm` will contain all of the basic `Term` constructors, as well as the additional ones provided by `BoolTerm` and `NatTerm`, and maps the old inductives' constructions to the appropriate constructions of the new one.
 
 == Definition modularity
 
@@ -565,13 +552,13 @@ mod def BoolNatTerm.is_var_zero
 
 Similarly, the proof for `is_var_zero_eq` need not anymore information after merging both `BoolTerm.is_var_zero_eq` and `NatTerm.is_var_zero_eq`:
 ```lean
-mod def BoolTerm.is_var_zero_eq extends Term.is_var_zero_eq where finally
+mod def BoolTerm.is_var_zero_eq extends Term.is_var_zero_eq where by
   ... -- proof omitted
 
-mod def NatTerm.is_var_zero_eq extends Term.is_var_zero_eq where finally
+mod def NatTerm.is_var_zero_eq extends Term.is_var_zero_eq where by
   ... -- proof omitted
 
--- no `finally` block needed
+-- no `by` block needed
 mod def BoolNatTerm.is_var_zero_eq 
   extends BoolTerm.is_var_zero_eq, NatTerm.is_var_zero _eq
 ```
@@ -601,7 +588,7 @@ mod def BoolNatTerm.is_var_zero_eq
   edge((-1, 0), (0, -2), "->",  label: "extends", label-angle: 40deg)
   edge((1, 0), (0, -2), "->",  label: "extends", label-angle: -40deg)
 }))
-In order to iterate on this implementation and ensure its usability, we studied the case of taking an existing implementation of STLC#footnote("https://github.com/amarmaduke/lean-stlc") which proves the strong normalization property of the system, and extended it with additional constructors, allowing us to modularly prove the strong normalization property of the extended system. In particular, the original normalization was *not* built with modularity in mind, and was still extendable after the fact. The original formalisation follows the usual proof of normalisation using a logical relation.
+In order to iterate on this implementation and ensure its usability, we studied the case of taking an existing implementation of STLC (@leanstlc) which proves the strong normalization property of the system, and extended it with additional constructors, allowing us to modularly prove the strong normalization property of the extended system. In particular, the original normalization was *not* built with modularity in mind, and was still extendable after the fact. The original formalisation follows the usual proof of normalisation using a logical relation.
 
 #align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
 inductive Ty : Type where
@@ -642,7 +629,7 @@ mod inductive NatTerm.Term
 ```
 ]]
 
-The total formalisation contains 12 inductive types as well as 92 definitions/theorems. Almost all of these were extended with no issue. The sole limiting factor in reaching the end of the formalisation relying only on extensions was with regards of the logical relation used in the original formalisation to prove strong normalisation: their initial formulation was too weak to prove SN on a system extended with natural numbers, and the theorems surrounding it relied heavily on definitional equalities of `LR` that could not be recovered after modularly mapping it to something strong enough for our use-case. As such, the fundamental lemma itself had to be written as a normal lean `def` rather than an extension. A possible solution to circumventing such issues, based on the idea of removing the reliance of some definitional equalities on a given term, is discussed in the future works.
+The total formalisation contains 12 inductive types as well as 92 definitions/theorems. Almost all of these were extended with no issue. The original formalisation contains a limitation to extensions in that the logical relation `LR` it defines to prove strong normalisation is too weak to prove the property on a system extended with natural numbers. We considered manually adding a modular map from `LR` to a variant strong enough for our purpose. However, the theorems in the original formalisation that make use of that LR rely heavily on its definitional equalities, which do not hold in a stronger formulation of the relation, meaning such a mapping leads to ill-typed terms when translating said theorems. As such, `LR` and the fundamental lemma had to be written as normal lean `def`s rather than as extensions. A solution to circumventing such issues, based on the idea of removing the reliance on some definitional equalities on a given term, is discussed in the future works.
 
 To showcase the capacity to merge separate extensions, we produce another extension of STLC containing primitives for booleans, namely a boolean constructor in `Ty`, and term constructors for `true`, `false` and `if-then-else`. We then successfully construct a formalisation of STLC with both natural numbers and booleans by merging the two previous formalisations, thus proving the strong normalization of "STLC + Bool + Nat" fully modularly. 
 
@@ -664,8 +651,8 @@ For lack of a better metric to measure the usability of #Gemel, we remark that, 
 #align(center, diagram(spacing: 1.3em, {
   // Left side: STLC extensions
   node((-2, -2), caseCell([STLC])              ,name : <STLC>)
-  node((-6, -1), caseCell([STLC + Fix])    ,name : <STLCFix>)
-  node((-6, 1), caseCell([STLC + Bool])   ,name : <STLCBool>)
+  node((-5, -1), caseCell([STLC + Fix])    ,name : <STLCFix>)
+  node((-5, 1), caseCell([STLC + Bool])   ,name : <STLCBool>)
   node((-2, 2), caseCell([STLC + Bool \ + Fix]),name : <STLCBoolFix>)
 
   edge(<STLCBoolFix>, <STLCBool>, "->", label: "extends", label-angle: auto)
@@ -675,8 +662,8 @@ For lack of a better metric to measure the usability of #Gemel, we remark that, 
 
   // Right side: CPS extensions
   node((2, -2), caseCell([CPS])             , name: <CPS>)
-  node((6, -1), caseCell([CPS + Fix])   , name: <CPSFix>)
-  node((6, 1), caseCell([CPS + Nat])   , name: <CPSNat>)
+  node((5, -1), caseCell([CPS + Fix])   , name: <CPSFix>)
+  node((5, 1), caseCell([CPS + Nat])   , name: <CPSNat>)
   node((2, 2), caseCell([CPS + Nat + Fix]), name: <CPSNatFix>)
 
   edge(<CPSNat>, <CPS>, "->", label: "extends", label-angle: auto, label-pos : 70%)
@@ -690,87 +677,96 @@ For lack of a better metric to measure the usability of #Gemel, we remark that, 
   edge(<STLCBool>   , <CPSNat>   , "-->", label: $⟦ underscore ⟧_"Bool"$)
   edge(<STLCBoolFix>, <CPSNatFix>, "-->", label: $⟦ underscore ⟧_"Bool+Fix"$) 
 }))
-To showcase the capabilities of our framework, and provide a point of comparison with another modular system, we reproduce the central case study shown in Pyrosome's (@Pyrosome) paper. This case study introduces two type system: STLC, and a call-passing-style (CPS) type-system, as well as a translation from the former to the latter which proves $beta eta$-equivalence is conserved through that translation pass. The case-study then extends both STLC and CPS with new constructions (resp. booleans and a fixpoint operator for STLC, natural numbers and a fixpoint operator for CPS), and extends the translation pass accordingly. One feature of Pyrosome's case study is that their framework allows for limited forms of horizontal extensions, which our framework doesn't. In particular, STLC terms are separated between values (i.e terms whose head can't be anymore reduced) and expressions (who can reduce). 
+To showcase the capabilities of our framework, and provide a point of comparison with another modular system, we reproduce the central case study shown in Pyrosome's (@Pyrosome) paper. This case study introduces two type system: STLC, and CPS-style type-system, as well as a translation from the former to the latter which proves $beta eta$-equivalence is conserved through that translation pass. The case-study then extends both STLC and CPS with new constructions (resp. booleans and a fixpoint operator for STLC, natural numbers and a fixpoint operator for CPS), and extends the translation pass accordingly. One feature of Pyrosome's case study is that their framework allows for limited forms of horizontal extensions, which our framework doesn't. In particular, STLC terms are separated between values (i.e terms whose head can't be anymore reduced) and expressions (who can reduce). 
 This STLC formalisation differs from the first case study's in that typing is enforced intrinsically here, meaning the type of STLC terms are indexed by a context and a type (i.e `Term` has type `List Ty → Ty → Type`), whereas well-typedness is enforced extrinsically through a predicate in the former (i.e `Term` has type `Type` and a predicate `Typing: List Ty → Ty → Term → Prop` is defined). In order to modularly reuse as much API as possible between STLC, CPS and their respective extensions (such as substitution and renaming operations), both type systems are defined as extensions of a `Base` bundle, for which terms are just variables, and which defines a common API for both extensions to build off of. The shape of both systems differ in that both expressions and values are indexed by a type in STLC, but only values are in CPS. The type of terms is instead indexed by a context, a tag, and a dependent family `Tag.Data` over that tag which explicits by what data a term of a given tag is indexed by. As such, both STLC and CPS can extend the `Tag` type, and `Tag.Data` for their respective needs:
 
-#box[
+#figure(supplement: "Figure",caption: [Definitions of Base, STLC and CPS, `Term` is indexed by a data associated to, this data gets extended accordingly for each extension.])[
+
 #align(center + top)[
 #box(fill: luma(230), inset: 5pt, radius: 4pt)[
 *BASE*
-#set text(size: 8pt)
+#set text(size: 9.5pt)
 ```lean
 inductive Tag where
-| val
+  | val
+
 inductive Ty where
-| unit
+  | unit
+
 def Tag.Data : Tag → Type
-| val => Ty -- Value terms are always indexed by a type
-inductive Term : List Ty → (t : Tag) → t.Data → Type 
-| var:(n : Fin Γ.length) → Γ[n] = A → Term Γ val 
+  | val => Ty -- Values are always indexed by a type
+
+inductive Term : List Ty → (t : Tag) → (Tag.Data t) → Type 
+  | var:(n : Fin Γ.length) → Γ[n] = A → Term Γ val 
 ```]]
 #v(-1.5em)
-#grid(columns: 2, align: center + top, column-gutter: 0.5em)[
-#box(fill: luma(230), inset: 5pt, radius: 4pt)[
+#grid(columns: 2, align: center + top, column-gutter: 5em)[
+#box(fill: luma(230), inset: 5pt, radius: 4pt, width: 125%)[
 *STLC*
-#set text(size: 8pt)
+#set text(size: 9.5pt)
 ```lean
 mod inductive Tag extends Base.Tag where
-| exp
+  | exp
+
 mod inductive Ty extends Base.Ty where
-| arr (A B : Ty)
+  | arr (A B : Ty)
+
 
 mod def Tag.Data extends Base.Tag.Data where
-extends with
-| exp => Ty --STLC exprs are indexed by a type
+  extends with
+  | exp => Ty --STLC terms are indexed by a type
+
 mod inductive Term extends Base.Term where
-| ret : Term Γ val A → Term Γ exp A
-| lam : Term (A::Γ) exp B → Term Γ val (.arr A B)
-| app : Term Γ exp  (.arr A B) → Term Γ exp  A → Term Γ exp B
+  | ret : Term Γ val A → Term Γ exp A
+  | lam : Term (A::Γ) exp B → Term Γ val (.arr A B)
+  | app : Term Γ exp  (.arr A B) → Term Γ exp A 
+          → Term Γ exp B
 
 
 
 
 ```]][
-#box(fill: luma(230), inset: 5pt, radius: 4pt)[
-#set text(size: 8pt)
+#box(fill: luma(230), inset: 5pt, radius: 4pt, width: 125%)[
+#set text(size: 9.5pt)
 *CPS*
 ```lean
 mod inductive Tag extends Base.Tag where
-| exp
+  | exp
+
 inductive Ty where
-| not   (A : Ty)
-| times (A B : Ty)
+  | not   (A : Ty)
+  | times (A B : Ty)
+
 mod def Tag.Data extends Base.Tag.Data where
-extends with
-| exp => Unit --CPS exprs are not
+  extends with
+  | exp => Unit --CPS terms are not
+
 mod inductive Term extends Base.Term where
-| lam : Term (A::Γ) exp () → Term Γ val A.not
-| app : Term Γ val A.not → Term Γ val A → Term Γ exp ()
-| and_intro : Term Γ val A → Term Γ val B → Term Γ val (A.times B)
-| fst : Term Γ val (A.times B) → Term Γ val A
-| snd : Term Γ val (Ty.times A B) → Term Γ val B
+  | lam : Term (A::Γ) exp () → Term Γ val A.not
+  | app : Term Γ val A.not → Term Γ val A 
+          → Term Γ exp ()
+  | and_intro : Term Γ val A → Term Γ val B 
+          → Term Γ val (A.times B)
+  | fst : Term Γ val (A.times B) → Term Γ val A
+  | snd : Term Γ val (Ty.times A B) → Term Γ val B
 
 ```]]]
-#aa[This is very ugly and needs to be done better]
-// #aa[Explain the challenges of intrinsic verification, how Pyrosome's GAT was circumvented with indexed inductives and quotients. Explain how parts of the ability to do horizontal extensions was recovered here as well. Also explain that this presentation is intrinsic whereas the previous case study's was extrinsic.]
-
 
 = Related works
 <related-works>
 We compare our approach with the existing solutions with the modularity problem in ITPs. 
 
-"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types (namely, impredicative church-encodings in the former, and Generalized Algebraic Theories in the latter). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and expose the underlying internals of the encodings to the user.
+"Meta-Theory à la Carte" (@Delaware2013) and "Pyrosome" (@Pyrosome) base their modularity on internal encodings of types. The former relies on Mendler-style Church encodings (@Jansen2013), the latter on Generalized Algebraic Theories (@Cartmell1986). In both cases, the constructions are inefficient, incapable of extending previously user-defined inductive types (#ie expecting users to rely on the aforementioned encodings from the ground up), and exposes the underlying internals of the encodings to the user.
 Having to deal with encodings of types rather than types adds
 a heavy burden in particular for new users interested in program verification.
 The lesson to include inductive data-types natively has been learned early by popular ITPs (namely Rocq and Lean), who at first had no primitive notions of inductive types in their systems and then resorted to add those. Nowadays, most systems usually possess a syntactic notion of (co-)inductive types, and justify the ability to define these via some classes of models, allowing users to work with the abstractions these types provide, rather than with their encoding in said models. The only popular system that still relies on encodings to define such types, and manages to hide their implementation details well, is Isabelle/HOL.
 
 On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the information given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
 
-Rocqet comes the closest in philosophy to our implementation, relying heavily on meta-programming and seemingly manipulating Rocq's AST directly. It however also doesn't allow for extensions after the fact, and their interface for extending past definitions is more restricted. Indeed, their framework only allows for constructing recursive functions with just one pattern-match at the top of the function, and nothing else. In particular, their proofs are written as recursive functions rather than as normal tactic-mode proofs. Their system also requires users to explicit the motive function of each induction in their system. All of this comes at a cost for the user-experience.
+Rocqet comes the closest in philosophy to our implementation, relying heavily on meta-programming and seemingly manipulating Rocq's AST directly. It however also doesn't allow for extensions after the fact, and their interface for extending past definitions is more restricted. Indeed, the only allows for constructing recursive functions with a single pattern-match with a single discriminant at the top of the function, where #Gemel handles arbitrary pattern-matching. Furthermore, Rocqet is suited for defining and extending functions and proofs defined using structural induction on the datatype getting extended, #Gemel on the other hand can handle structural and well-founded induction over arbitrary terms. Lastly, Rocqet requires users to explicit the motive function of each induction in their system. All of this comes at a cost for the user-experience.
 
 None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalizations "after the fact". Instead, formalizations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
-
-
+ 
 
 // A central contribution on matters of modularity in regular programming languages, "Data Types à la Carte" (@Swierstra2008), provides a simple and elegant solution to the expression problem based on a parametrical approach to modular syntax in Haskell. This solution, however, cannot be easily adapted to ITPs since ITPs needs to ensure consistency via their type system. Instead, existing approaches either rely on complex encodings of datatypes that leak to the user, or on meta-programming.
 
@@ -783,29 +779,28 @@ None of these systems, independently of whether they use encodings or the meta-p
 // On the other hand, Rocq à la Carte (@Forster2020) relies on the meta-programming capabilities offered by the MetaRocq Project (@Sozeau2020a) to allow users to construct new inductive types and functions by merging other inductive types, and/or adding new constructors. New functions on a "merged" datatype can then be constructed by merging past functions. The metaprogram then uses the given piece of information to reconstruct a new inductive type, and new functions, based on the informations given by the user. While great for extending constructions "vertically" (#ie by adding constructors to a type), this system does not allow for horizontal extensions (#ie extending the type signature of inductive types and their constructors). Furthermore, this  approach has been hindered in the past by the lack of good metaprogramming frameworks in ITPs.
 
 // None of these systems, independently of whether they use encodings or the meta-programming, handle all of the type-system of ITPs they are implemented for (#eg none handle co-inductive types), or allow users to extend past formalisations "after the fact". Instead, formalisations have to be built from the ground up with the expectation that they will be extended with a specific framework in mind, making them much less useful for real-world uses.
-// #aa[TODO talk in details about Rocquet, Datatypes à la Carte, Meta-Theory à la Carte, Pyrosome, Rocq à la Carte]
 
 = Future work
 <FutureWorks>
 
 #Gemel shows how directly manipulating the core AST of an ITP without relying on encodings can work for producing modular formalisations. There are however further design decisions that remain to be experimented with, and which may open up the door for further improvements to the tool.
 
-There are morally two ways to extend an inductive type, referred to as vertical and horizontal extensions #aa[I still haven't found any mention of the notion of horizontal/vertical extensions, including in row poly works, AI hasn't found anything either]. The former consists of adding new constructors to an inductive type, the latter of adding new parameters or indices to it. Most modular systems only allow for doing vertical extensions, as it is both the easiest one to justify and implement, and arguably the most useful one. Currently, #Gemel only manages vertical extensions, though our second case-study (@CS2) shows how some horizontal extensionality can be recovered in the system through careful use of dependent types. The space of handling horizontal extensions has not been explored much in existing literature, the only system which, to our understanding, manages some form of horizontal extensions is Pyrosome. However, the scope of their extensions is much more limited and cares only about translation passes for compilers. 
+There are morally two ways to extend an inductive type, referred to as vertical and horizontal extensions (@Duggan96). The former consists of adding new constructors to an inductive type, the latter of adding new fields to a type's constructor, or to the type itself. Most modular systems only allow for doing vertical extensions, as it is both the easiest one to justify and implement, and arguably the most useful one. Currently, #Gemel only manages vertical extensions, though our second case-study (@CS2) shows how some horizontal extensionality can be recovered in the system through careful use of dependent types. The space of handling horizontal extensions has not been explored much in existing literature, the only system which, to our understanding, manages some form of horizontal extensions is Pyrosome. However, the scope of their extensions is much more limited and cares only about translation passes for compilers. 
 
 The central way in which extensions are added to the environment is by mapping constants to new (potentially incomplete) terms. For a translation using a constant found in the mapping context to work well, it is necessary that the reduction rules involving past constants also hold when mapping the constant to its associated term. This restriction is implicitly present when translating recursors and matches. However, as seen in the first case-study, it may sometimes be necessary for a formalisation to extend something (e.g the logical relation in the case study) with something possibly completely new, that may not hold the same definitional equalities. In order to do this, #Gemel could, in the future, have some mechanism for transforming an expression which relies on some particular reduction rules/definitional equalities into one that does not. This idea of removing such rules is not new, and appears in works producing translations from Extensional Type Theory to Intensional Type Theory (@Winterhalter2020), as well as works on removing definitional equalities from Lean using a similar translation (@vaishnav). The latter work could in particular possibly be adapted to our needs since it is already implemented in Lean.
 
-One challenge with extending independent formalisations is that shape of an original proof might not be fitting to prove an extended version of it. An important example of this issue is proofs by induction: it appeared a few times when testing our tool that an original proof that was done by induction needed, for the extended proof to work, to generalize some variables when doing said induction, such that the induction hypotheses would be stronger. Similarly, it could happen that part of a proof originally just needed a case split where the new proof would require the full power of induction. However, the existing interface of metavariable holes morally only allows us to add the necessary content at the tips of our proof tree, not modify the proof-tree in its generality. To extend this framework, we could imagine allowing for some "after the fact" transformations, such as generalisations or turning a case split into an induction, to the rest of the proof tree, allowing for a more comfortable experience of doing extensions of independent formalisations.
+One challenge with extending independent formalisations is that shape of an original proof might not be fitting to prove an extended version of it. An important example of this issue is proofs by induction: it appeared a few times when testing #Gemel that an original proof that was done by induction needed, for the extended proof to work, to generalize some variables when doing said induction, such that the induction hypotheses would be stronger. Similarly, it could happen that part of a proof originally just needed a case split where the new proof would require the full power of induction. However, the existing interface of metavariable holes morally only allows us to add the necessary content at the tips of our proof tree, not modify the proof-tree in its generality. To extend this framework, we could imagine allowing for some "after the fact" transformations, such as generalisations or turning a case split into an induction, to the rest of the proof tree, allowing for a more comfortable experience of doing extensions of independent formalisations.
 
 #pagebreak()
 #bibliography("biblio.bib", title : "References", style : "citation-style.csl")
-#pagebreak()
-#show: appendix
-= Formal presentation of modular maps
-<AppendixA>
+// #pagebreak()
+// #show: appendix
+// = Formal presentation of modular maps
+// <AppendixA>
 
-This section makes a partial attempt at justifying the implementation of modular maps in our system, and why it can be trusted to make well-formed terms.
-
-First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
+// This section makes a partial attempt at justifying the implementation of modular maps in our system, and why it can be trusted to make well-formed terms.
+// 
+// First, let's define the syntax we'll be using in this toy presentation. This is a basic dependently-typed system equiped with a predicative hierarchy of universes à la Russel, as well as constants and metavariables. For the sake of simplifying the presentation, we will assume constants cannot be unfolded (i.e we will only care about $beta$/$eta$-reduction, not $delta$-reduction). This, in particular, does not give good justification as to why recursors of inductive types may be extended safely.
 
 #let syntax_def = [
 $"Terms" : t, f, A, B &::= 
@@ -819,10 +814,10 @@ $"Terms" : t, f, A, B &::=
 $]
 #let modmap(Sigma : $Sigma$,Phi : $Phi$,Theta,Gamma,Delta,t1,t2,A1,A2) = $Sigma | Phi | Theta | Gamma => Delta tack.r t1 => t2 : A1 => A2$
 
-#figure(syntax_def,caption: "Syntax of our type theory")
-The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the modular maps.
+// #figure(syntax_def,caption: "Syntax of our type theory")
+// The usual typing judgements one would expect apply. These judgement need to carry not only the usual variable context $Gamma$, but also a global constants context $Sigma$ to handle the type of constants, similarly to @MetaCoq2025, as well as a metavariable context $Theta$ that holds, for each metavariable, both the context and the type of said metavariable, similarly to @Kovacs2020. The idea is that constants may be mapped to some term containing "holes", i.e metavariables, allowing us to make the modular maps.
 
-We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the modular map in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the modularly mapped term, as well as the type of both the original term and the modularly mapped one. The modular map acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their modular map. Furthermore, when modularly mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
+// We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the behaviour of the modular map in practice. This judgement carries the same contexts found in the aforementionned typing judgements, as well as a mapping context $Phi$, which maps constants to the bundling of a metavariable context and a term that may contain the metavariables present in the context it's bundled with. The judgement states tracks both the base variable context and a variable context for the modularly mapped term, as well as the type of both the original term and the modularly mapped one. The modular map acts structurally over the usual constructors of our type-theory, and relies on the mapping context to translate constants into their modular map. Furthermore, when modularly mapping a constant, the metavariable context it carries is weakened/lifted, such that every metavariable lives in some telescope over translated variable context.
 
 #let wk(w,body) = $attach(arrow.double.t,br: #w) #h(-0.1em) body$
 #let cons(Gamma,x,A) = $Gamma,x : A$
@@ -875,16 +870,8 @@ We define a judgement $modmap(Theta, Gamma,Delta ,t,t', A, A')$ encompassing the
     $modmap(Theta_2, (cons(Gamma,x, A)), (cons(Delta, x, A')), t, t' ,B, B'))$, $"MV"(Theta_1) inter "MV"(Theta_2) = emptyset$
 ))$
 #let modmapJudgementSet = [#grid(columns: 2,column-gutter: 2em)[#block(inset: 0.3em,stroke: 0.1em)[$modmap(Theta, Gamma,Delta ,t,t', A, A')$]][(In global context $Sigma$, mapping context $Phi$, metavariable context $Theta$, term $t$ of type $A$ in context $Gamma$ maps to term $t'$ of type $A'$ in context $Delta$)]
-#mathpar(modmap_univ, modmap_var, modmap_const, modmap_mvar, modmap_app, modmap_pi, modmap_lam)
+// #mathpar(modmap_univ, modmap_var, modmap_const, modmap_mvar, modmap_app, modmap_pi, modmap_lam)
 ]
 
-#figure(modmapJudgementSet, caption: [Judgement rules for mappings])
+// #figure(modmapJudgementSet, caption: [Judgement rules for mappings])
 
-// The data contained in this judgement is enough to ensure any modularly mapped term to be well-typed. Note that this theorem critically relies on the fact that this system only uses 
-// #theorem[Given a mapping context $Phi$, if for each $((d : A) mapsto (Theta,t : A')) in Phi$:
-// + $Sigma | epsilon | epsilon tack.r d : A$
-// + $Sigma | Theta | epsilon tack.r t : A'$ 
-// + $modmap(Theta , epsilon, epsilon, A, A', univ_i, univ_i)$ for some $i$, 
-// Then for all $Gamma, space t, space A$ s.t $Sigma | Theta | Gamma tack.r t : A$, there exists $Delta, space t', space A'$ s.t $Sigma | Theta | Delta tack.r t' : A'$ and $modmap(Theta, Gamma, Delta, t, t', A, A')$]
-// Proof: by induction on the typing judgement $Sigma | Gamma tack.r t : A$.
-// #aa[TODO: This theorem is false, actually #emoji.face.woozy]

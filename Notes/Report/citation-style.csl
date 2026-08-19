@@ -302,7 +302,6 @@
                   </if>
                   <else>
                     <group delimiter=" ">
-                      <text term="advance-online-publication"/>
                       <date form="text" date-parts="year-month-day" variable="issued"/>
                     </group>
                   </else>
