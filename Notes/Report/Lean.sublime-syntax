@@ -18,12 +18,12 @@ contexts:
           scope: keyword.other.lean
           push:
             - meta_scope: meta.definitioncommand.lean
-            - match: '(?=\where\b|[:\|\(\[\{⦃<>])'
+            - match: '(?=\where\b|[:\|\(\[\{⦃<>\n])'
               pop: true
             - include: comments
             - include: definitionName
             - match: ","
-        - match: '(?=\where\b|[:\|\(\[\{⦃<>])'
+        - match: '(?=\where\b|[:\|\(\[\{⦃<>\n])'
           pop: true
         - include: comments
         - include: definitionName

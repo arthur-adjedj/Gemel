@@ -201,11 +201,52 @@ def Exp₁.count : Exp₁ → Nat -- Error: Failed to show termination
 ```
 However, replicating (and extending on) this technique to bring modular tooling in the Lean proof assistant is not really feasable. The previous code snippet would work in Rocq, but throws a non-termination error in Lean. Indeed, functions in ITPs are required to be total for the sake of ensuring the soundness of the type-system (i.e the inability to prove `False`). Every popular ITP ensures this restriction differently (this is discussed more in depth in @recursion), but an important divergence between Rocq and Lean is that Rocq's system for detecting structural recursion works up to reduction, whereas Lean doesn't. This feature is paramount to Rocq à la Carte's method for producing modular code, and cannot be easily replicated in Lean due to divergences in the Lean's design decisions.
 
-== Our solution #aa[preview of the user interface ?]
-One core objective of #Gemel is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making use of the existing metaprogramming APIs provided by Lean in order to achieve our goal of modularity. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *modular map*.#aa[talk conceptually about our solution first, technically later] A term may get modularly mapped to something which contains holes, also known as metavariables. The reason why such holes may appear becomes more apparent in the next section. 
-// An important property for such a translation should be that, given a well-typed term (in a given context), its partially mapping should itself also be well-typed (in an appropriately translated context). The general description of the way partial mappings are implemented is as follows: The global environment, which usually carries the data of previously defined constants, now also contain what we refer to as a *mapping context*. This context maps some constants in the global environment to new terms. These new terms may themselves contain some holes, referred to as metavariables. These holes are meant to be solved through user-input upon translating a term containing constants present in the mapping context.
-A modular map is dependent on a *mapping context*. This context maps some constants in the global environment to new terms.
-Using this mapping context, the algorithm for modular maps is straightforward: when modularly mapping a constant present in the mapping context, map said constant to the term it maps to. Otherwise, translate terms structurally (e.g $⟦ λ a : A. t  ⟧ ::= λ a : ⟦ A ⟧. ⟦ t ⟧$). The following sections showcase how #Gemel make use of this system of modular maps to achieve its goal of providing a user-friendly system of modular extensions.
+== Our solution
+One core objective of #Gemel is the ability to extend a formalisation or program after the fact, no matter the shape it may have been given by a former implementor. In order to do so, we shift our focus from encodings "à la Carte" to making use of the existing metaprogramming APIs provided by Lean, manipulating its core syntax directly. In particular, we want to be able to translate any definition or theorem written about one inductive type into one that instead mentions an extended version of said type. We refer to this translation function, written onwards as $⟦\_⟧$, as a *modular map*. 
+
+For now, let's consider a degenerate example: a user has written two separate definitions of natural numbers that are the exact same in shape, and would like to translate a function using the former into one that uses the latter:
+
+#align(center)[
+#grid(columns: 2)[
+```lean
+inductive Nat₁ where        
+  | Z : Nat₁
+  | S : Nat₁ → Nat₁
+
+def Nat₁.add : Nat₁ → Nat₁ → Nat₁        
+  | n,Z => n
+  | n, S k => S (add n k)
+```][
+```lean
+inductive Nat₂ where
+  | Z : Nat₂
+  | S : Nat₂ → Nat₂
+
+def Nat₂.add := ?
+```
+]]
+
+A modular mapping function could traverse the definition of `Nat₁.add`, and transform every occurence of `Nat₁` to `Nat₂`. Similarly, each constructor could get mapped accordingly, i.e `Nat₁.Z` maps to `Nat₂.Z` and similarly for `S`. Such a translation need only be structural, keeping the shape of the original function (e.g $⟦ λ a : A. t  ⟧ ::= λ a : ⟦ A ⟧. ⟦ t ⟧$) while transforming the constants present inside it.  
+As such, a modular map depends on a *mapping context*, i.e a context which maps some constants in the global environment to new terms.
+Furthermore, users may want to choose which mapping context they are working in at a given moment. To allow for this, #Gemel adds two new Lean commands for opening, importing and closing a mapping context:
+```lean
+modular <mapping context name> (imports := <optional imports>)
+
+... --modular extensions
+
+end modular <mapping context name>
+```
+To quickly showcase #Gemel's syntax, `Nat₂` can be defined as an extension of `Nat₁` with no additional constructors, and translate its `add` function as follows:
+```lean
+modular showcase
+
+mod inductive Nat₂ extends Nat₁
+
+mod def Nat₂.add extends Nat₁.add 
+
+modular end showcase
+```
+The following sections showcase how #Gemel make use of this system of modular maps to achieve its goal of providing a user-friendly system of modular extensions.
 
 = Inductive Types and recursors
 <ind_extension>
@@ -591,41 +632,50 @@ mod def BoolNatTerm.is_var_zero_eq
 In order to iterate on this implementation and ensure its usability, we studied the case of taking an existing implementation of STLC (@leanstlc) which proves the strong normalization property of the system, and extended it with additional constructors, allowing us to modularly prove the strong normalization property of the extended system. In particular, the original normalization was *not* built with modularity in mind, and was still extendable after the fact. The original formalisation follows the usual proof of normalisation using a logical relation.
 
 #align(center)[#box[#grid(columns: 2, column-gutter: 2em)[```lean
-inductive Ty : Type where
+inductive Base.Ty : Type where
 | arrow : Ty → Ty → Ty
 ```][```lean
-inductive Term where
+inductive Base.Term where
 | var : Nat → Term
 | app : Term → Term → Term
 | lam : Term → Term
 ```]
 ```lean
-inductive Typing : List Ty → Term → Ty → Type where
+inductive Base.Typing : List Ty → Term → Ty → Type where
   | tyvar : Γ[n]? = some A → Typing Γ (var n) A
   | tyapp : Typing Γ f (arr A B) → Typing Γ t A → Typing Γ (app f t) B
   | tylam : Typing (A::Γ) t B → Typing Γ (lam t) B
+
+... --other definitions/theorems
 ```
 ]]
 
 We extend this base definition to add natural numbers.
 #align(center)[#grid(columns: 2, column-gutter: 2em)[```lean
-mod inductive NatTerm.Ty 
-  extends Ty where
+modular NatTerm
+
+mod inductive Ty 
+  extends Base.Ty where
   | nat
 ```][```lean
-mod inductive NatTerm.Term 
-  extends Term where
+
+
+mod inductive Term 
+  extends Base.Term where
   | zero   : Term
   | succ   : Term → Term
   | natRec : Term → Term → Term → Term
 ```]
 #box[
 ```lean
-  mod inductive NatTerm.Typing extends Typing where
+  mod inductive Typing extends Base.Typing where
     | zero   : Typing Γ zero nat
     | succ   : Typing Γ n nat → Typing Γ (succ n) .nat
     | natRec : Typing Γ n nat → Typing Γ P0 A 
       → Typing Γ PS (arr nat (arr A A)) → Typing Γ (natRec n P0 PS) A
+
+... --other definitions/theorems
+end modular NatTerm
 ```
 ]]
 
@@ -698,6 +748,8 @@ def Tag.Data : Tag → Type
 
 inductive Term : List Ty → (t : Tag) → (Tag.Data t) → Type 
   | var:(n : Fin Γ.length) → Γ[n] = A → Term Γ val 
+
+... --other definitions/theorems
 ```]]
 #v(-1.5em)
 #grid(columns: 2, align: center + top, column-gutter: 5em)[
@@ -705,6 +757,9 @@ inductive Term : List Ty → (t : Tag) → (Tag.Data t) → Type
 *STLC*
 #set text(size: 9.5pt)
 ```lean
+
+modular STLC
+
 mod inductive Tag extends Base.Tag where
   | exp
 
@@ -725,11 +780,17 @@ mod inductive Term extends Base.Term where
 
 
 
+... --other definitions/theorems
+end modular STLC
+
 ```]][
 #box(fill: luma(230), inset: 5pt, radius: 4pt, width: 125%)[
 #set text(size: 9.5pt)
 *CPS*
 ```lean
+
+modular CPS
+
 mod inductive Tag extends Base.Tag where
   | exp
 
@@ -750,6 +811,8 @@ mod inductive Term extends Base.Term where
   | fst : Term Γ val (A.times B) → Term Γ val A
   | snd : Term Γ val (Ty.times A B) → Term Γ val B
 
+... --other definitions/theorems
+end modular CPS
 ```]]]
 
 = Related works
