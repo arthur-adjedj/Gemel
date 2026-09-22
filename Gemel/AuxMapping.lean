@@ -38,14 +38,14 @@ def mkAuxMapping (oldName newName : Name) : ModularM (Name × ModularExtension) 
 
 def addAuxMapping (oldName newName : Name) : ModularM Unit := do
   let (name,mapping) ← mkAuxMapping oldName newName
-  trace[Modular.Elab] m!"Adding mapping {oldName} ⇒ {mapping}"
+  trace[Gemel.Elab] m!"Adding mapping {oldName} ⇒ {mapping}"
   addMapEntry name mapping
 
 def addUnfoldEqMapping (oldName newName : Name) : ModularM Unit := do
   let some oldEqn ← getUnfoldEqnFor? oldName true | return
   let some newEqn ← getUnfoldEqnFor? newName true | return
-  trace[Modular.Elab] "oldEqns : {oldEqn}"
-  trace[Modular.Elab] "newEqns : {newEqn}"
+  trace[Gemel.Elab] "oldEqns : {oldEqn}"
+  trace[Gemel.Elab] "newEqns : {newEqn}"
   addAuxMapping oldEqn newEqn
 
 def mapOldToNewEqnLemmas (oldName newName : Name) : ModularM (Option (AssocList Name Name)) := do

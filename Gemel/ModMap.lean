@@ -11,47 +11,52 @@ open Lean Meta Elab Command Term
 -- The main context in which this runs is the original context, not the modmapped one!
 partial def modMapAux (e : Expr): ModularM Expr := do
   withIncRecDepth do
-  withTraceNode `Modular.Subst (λ exn => return m!"modMapAux {indentExpr e} \n⇒{← (withModMappedLCtx do return exn.toOption.map indentExpr)}") do
+  withTraceNode `Gemel.Subst (λ |.ok e => return m!"modMapAux {indentExpr e} \n⇒ {← (withModMappedLCtx do return indentExpr e)}" | .error ex => return m!"modMapAux {indentExpr e} \n {ex.toMessageData}" ) do
   e.withApp fun fn args => do
   -- TODO manage universes better
   let .const fnName lvls := fn | return mkAppN (← traverse fn) (← modMapArgs args)
-  -- If a constant is not already extended at this point but should be (e.g if its type contains things that have a partial map), one might want, to delta-reduce the constant and map it as well.
-  -- This is not the right way to go and could lead to very expensive and deep recursions. Instead, this functions should be called with the assumption that all necessary functions have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this.
+  /-
+    If a constant is not already extended at this point but should be
+    (e.g if its type contains things that have a partial map), one might want
+    to delta-reduce the constant and map it as well.
+    This is not the right way to go and could lead to very expensive and deep recursions.
+    Instead, this functions should be called with the assumption that all necessary functions
+    have a corresponding mapping or don't need one. The core loop will simply sort constants topographically to ensure this. -/
   if let some ext := (← getMap)[fnName.eraseMacroScopes]? then
     --If the partial map has more args than given in the term, we need to eta-expand to avoid producing a term with loose bvars.
     -- TODO this is currently the "wrong" way to know the number of arguments needed since the current norm is that `numArgs` explicits the number of instantiated arguments, not the number of application arguments. `numArgs + numHoles` also doesn't work, consider a translation mapping eg `foo a` to `bar (?_ + a)`.
     unless ext.numArgs <= args.size do
       let e ← Meta.etaExpand e
-      return (← withTraceNode `Modular.Subst (fun _ => return m!"Eta-expanding expression") do modMapAux e)
+      return (← withTraceNode `Gemel.Subst (fun _ => return m!"Eta-expanding expression") do modMapAux e)
     let newArgs ← modMapArgs args
-    trace[Modular.Subst] m!"expr to instantiate : {ext.expr}"
+    trace[Gemel.Subst] m!"expr to instantiate : {ext.expr}"
     let res := ext.expr
       |>.instantiateLevelParams ext.levelParams lvls
       |>.instantiateRev newArgs[:ext.numArgs]
-    trace[Modular.Subst] m!"args instantiated : {res}"
-    trace[Modular.Subst] m!"numHoles : {ext.numHoles}"
+    trace[Gemel.Subst] m!"args instantiated : {res}"
+    trace[Gemel.Subst] m!"numHoles : {ext.numHoles}"
     -- The produced mvars are "synthetic", i.e they ought to be resolved by the users using tactics or other automations rather than through unification. We may want to use some heuristics in some cases to resolve these automatically when possible.
     -- They might be generated in the wrong context here. Consider a mapping `foo => fun x => bar x ?_`, the mvar won't have `x` in its context here. TODO something akin to `refine` probably
     let mvars ← withModMappedLCtx do Array.mkM ext.numHoles (mkFreshExprMVar none .syntheticOpaque)
-    trace[Modular.Subst] m!"mvars : {mvars}"
+    trace[Gemel.Subst] m!"mvars : {mvars}"
     let res := res.instantiateRev mvars
-    trace[Modular.Subst] m!"mvars instantiated : {res}"
+    trace[Gemel.Subst] m!"mvars instantiated : {res}"
     let res := mkAppN res newArgs[ext.numArgs:]
-    trace[Modular.Subst] m!"with extra args : {res}"
+    trace[Gemel.Subst] m!"with extra args : {res}"
     return ← modMapAux res
   let fallback _ : ModularM Expr := do
     let newArgs ← modMapArgs args
     let res := (mkAppN fn newArgs)
     pure res
   let some info ← getMatcherInfo? fnName | fallback ()
-  trace[Modular.Subst] "matcher {fnName} detected"
+  trace[Gemel.Subst] "matcher {fnName} detected"
   unless ← shouldAbstractMatcher info fn do
     return ← fallback ()
   let mvar ← do
     let mvar_ty ← modMapAux (← inferType e)
-    trace[Modular.Subst] "new matcher type : {mvar_ty}"
+    trace[Gemel.Subst] "new matcher type : {mvar_ty}"
     withModMappedLCtx do mkFreshExprSyntheticOpaqueMVar mvar_ty
-  trace[Modular.Subst] "matcher mvar : {mvar}"
+  trace[Gemel.Subst] "matcher mvar : {mvar}"
   -- We must compute the modmapped rhss early to report of any potential matchers needing extension in those rhss
   let rhss ← modMapArgs args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
   addMatchExtension mvar.mvarId! #[{ matchName := fnName
@@ -115,7 +120,7 @@ where
   shouldAbstractMatcher (info : MatcherInfo) (e : Expr) : ModularM Bool := do
     forallTelescopeReducing (← inferType e) fun xs _ => do
       let discrs_fvars := xs[info.getFirstDiscrPos...info.getFirstDiscrPos+info.numDiscrs]
-      trace[Modular.Subst] "discrs_fvars : {discrs_fvars}"
+      trace[Gemel.Subst] "discrs_fvars : {discrs_fvars}"
       let modMappedctx ← withAddModMappedFVars xs
       for hd_fvar in discrs_fvars do
         let ty ← inferType hd_fvar

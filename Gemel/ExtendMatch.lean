@@ -32,24 +32,24 @@ def MatcherBundle.replaceLCtx (m : MatcherBundle) (lctx : LocalContext) : Matche
     rhss := m.rhss.map subst.apply }
 
 def mkMatcherBundle (e : Expr) : MetaM (Option MatcherBundle) := do
-  trace[Modular.Match] "mkMatcherBundle {e}"
+  trace[Gemel.Match] "mkMatcherBundle {e}"
   e.withApp fun fn args => do
   let Expr.const c us := fn | return none
   let some info ← getMatcherInfo? c | return none
   assert! args.size >= info.arity
   let matchType ←  lambdaTelescope args[info.getMotivePos]! fun xs t => mkForallFVars xs t
   let params := args[0...info.numParams]
-  trace[Modular.Match] "matcher params : {params}"
+  trace[Gemel.Match] "matcher params : {params}"
   let matcherType ← instantiateForall (← instantiateTypeLevelParams (← getConstVal c) us) params
-  trace[Modular.Match] "matcherType : {matcherType}"
+  trace[Gemel.Match] "matcherType : {matcherType}"
   let discrsExpr := args[info.getFirstDiscrPos...(info.getFirstDiscrPos + info.numDiscrs)]
   let discrs := discrsExpr.toArray.zipWith (bs := info.discrInfos) fun e h => ⟨e,h.1.map (TSyntax.raw ∘ mkIdent)⟩
   let rhss := args[info.getFirstAltPos...(info.getFirstAltPos + info.numAlts)]
   let lctx ← getLCtx
   forallBoundedTelescope matcherType (some 1) fun _ ty => do
     let altTys ← forallTelescopeReducing ty fun matchBinders _ => matchBinders[info.numDiscrs...info.numDiscrs + info.numAlts].toArray.mapM inferType
-    trace[Modular.Match] "altTys : {altTys}"
-    trace[Modular.Match] "rhss : {rhss}"
+    trace[Gemel.Match] "altTys : {altTys}"
+    trace[Gemel.Match] "rhss : {rhss}"
     let lhss : Array AltLHS ← altTys.mapM fun altTy => forallTelescopeReducing altTy fun xs body => do
       let xs ← xs.filterM fun x => dependsOn body x.fvarId!
       body.withApp fun _motive margs => do
@@ -75,12 +75,12 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
   let {discrs, matchType, lhss, ..} := m
   -- We discard the previous rhss here since we have already modmapped them and stored in the match extension. The reason we need to do that is that if these are not modmapped early, there is no easy way to know if the rhs might contain new matchers that need extension as well
   let discrs ← discrs.mapM fun ⟨expr, h?⟩ => do return ⟨← _root_.modMap expr, h?⟩
-  trace[Modular.Match] "translated discrs : {discrs.map Discr.expr}"
-  trace[Modular.Match] "old matchType : {matchType}"
+  trace[Gemel.Match] "translated discrs : {discrs.map Discr.expr}"
+  trace[Gemel.Match] "old matchType : {matchType}"
   let matchType ← _root_.modMap matchType
   let lhss ← lhss.mapM fun {ref, fvarDecls, patterns} => do
     --TODO put behind a function
-    trace[Modular.Match] "old fvarDecls : {fvarDecls.map fun ldecl => Expr.fvar ldecl.fvarId}"
+    trace[Gemel.Match] "old fvarDecls : {fvarDecls.map fun ldecl => Expr.fvar ldecl.fvarId}"
     let modMappedLCtx ← getModMappedLCtx
     -- We have to maintain both the correct original pattern context (by bookkeeping the visited fvar decls) and the modmapped context (modMappedLCtx) for `modMap` to work correctly. Once that's done, the modmapped `fvarDecls` can be fetched out of the modmapped context.
     let (modMappedLCtx, oldFvarDecls) ← fvarDecls.foldlM (init := (modMappedLCtx,[])) fun (modMappedLCtx, prevOldFvarDecls) lcdl => do
@@ -95,11 +95,11 @@ def MatcherBundle.modMap (m : MatcherBundle) (newRhss : Array Expr): ModularM Ma
       withExistingLocalDecls oldFvarDecls do
       withSetModMappedLCtx modMappedLCtx do
         patterns.mapM Pattern.modMap
-    trace[Modular.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
+    trace[Gemel.Match] "patterns : {← patterns.mapM (Pattern.toExpr · true)}"
     return {ref, fvarDecls, patterns : AltLHS}
-  trace[Modular.Match] "lhss translated"
+  trace[Gemel.Match] "lhss translated"
   -- let rhss ← rhss.mapM _root_.modMap
-  -- trace[Modular.Match] "rhss translated"
+  -- trace[Gemel.Match] "rhss translated"
   let lctx ← getModMappedLCtx
   return {lctx, discrs, matchType, lhss, rhss := newRhss : MatcherBundle}
 
@@ -119,33 +119,33 @@ def reportMatcherResultErrors' (altLHSS : List AltLHS) (result : MatcherResult) 
       i := i + 1
 
 def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltView): TermElabM Expr :=
-  withTraceNode `Modular.Match (fun | .ok _ => return "Generating matcher from matcher bundle and added alts"
+  withTraceNode `Gemel.Match (fun | .ok _ => return "Generating matcher from matcher bundle and added alts"
                                     | .error e => return m!"Generating matcher from matcher bundle and added alts {e.toMessageData}") do
   let {lctx, discrs := oldDiscrs, matchType, lhss := oldlhss, rhss := oldrhss} := m
   withLCtx' lctx do
   unless oldlhss.length == oldrhss.size do
     throwError "Internal error: number of lhs ({oldlhss.length}) and rhs ({oldrhss.size}) in original match differ"
-  trace[Modular.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
+  trace[Gemel.Match] "addedAlts: {addedAlts.map MatchAltView.ref}"
   let (discrs, matchType, newlhss, newrhss) ← commitIfDidNotPostpone do
     let matchAlts ← liftMacroM <| expandMacrosInPatterns addedAlts
-    trace[Modular.Match] "matchType: {matchType}"
+    trace[Gemel.Match] "matchType: {matchType}"
     -- We disallow generalisations for now here, namely because it makes the task of figuring out how to update the old alts much more complex, since new patterns may be added to either the beginning (for new indices) or the right (for generalizations) of the old patterns. This is certainly managable in practice, just not a priority for now.
     let (discrs, matchType, alts, _) ← elabMatchAltViews false oldDiscrs matchType matchAlts
-    trace[Modular.Match] "alts elaborated"
+    trace[Gemel.Match] "alts elaborated"
     synthesizeSyntheticMVarsUsingDefault
     let rhss := alts.map Prod.snd
     let matchType ← instantiateMVars matchType
-    trace[Modular.Match] "matchType : {matchType}"
+    trace[Gemel.Match] "matchType : {matchType}"
     let altLHSS ← instantiateAltLHSs (alts.map Prod.fst)
-    trace[Modular.Match] "altLHSS instantiated"
+    trace[Gemel.Match] "altLHSS instantiated"
     return (discrs, matchType, altLHSS, rhss)
   -- If the new branches need some indices to be generalized, we assume they can simply be generalised to variables in the previous branches since the information regarding those indices was useless until now. If this doesn't work, I will probably need to rewrite a version of `elabMatchAltViews` that also generalizes elaborated AltLHSs on the go, which I would much rather avoid doing...
   let mut updatedOldLhss := #[]
   let mut updatedOldRhss := #[]
   let numNewDiscrs := discrs.size - oldDiscrs.size
-  trace[Modular.Match] "new discrs : {discrs[0...numNewDiscrs].toArray.map Discr.expr}"
+  trace[Gemel.Match] "new discrs : {discrs[0...numNewDiscrs].toArray.map Discr.expr}"
   for {ref, fvarDecls, patterns} in oldlhss, rhs in oldrhss do
-    trace[Modular.Match] "fvars before: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
+    trace[Gemel.Match] "fvars before: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
     let mut fvarDecls := fvarDecls
     let mut patterns := patterns
     let mut newRhs := rhs
@@ -161,35 +161,35 @@ def MatcherBundle.mkMatcher (m : MatcherBundle) (addedAlts : Array TermMatchAltV
         let e ← pat.toExpr
         let e ← kabstract e newIndex
         let e := e.instantiate1 (Expr.fvar newldcl.fvarId)
-        trace[Modular.Match] "pattern generalisation: {e}"
+        trace[Gemel.Match] "pattern generalisation: {e}"
         ToDepElimPattern.toPattern e
       patterns := (Pattern.var newldcl.fvarId)::patterns
       newRhs ← kabstract newRhs newIndex
       newRhs := Expr.lam `x indexType newRhs .default
-      trace[Modular.Match] "rhs generalisation: from {rhs} to {newRhs}"
-    trace[Modular.Match] "fvars after: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
+      trace[Gemel.Match] "rhs generalisation: from {rhs} to {newRhs}"
+    trace[Gemel.Match] "fvars after: {fvarDecls.map fun fvarDecl => fvarDecl.fvarId.name}"
     updatedOldRhss := updatedOldRhss.push newRhs
     updatedOldLhss := updatedOldLhss.push {ref, fvarDecls, patterns}
   let lhss := updatedOldLhss.toList ++ newlhss
   let rhss := updatedOldRhss ++ newrhss
-  trace[Modular.Match] "lhss : {← lhss.mapM fun lhs => lhs.patterns.mapM fun p => p.toExpr}"
-  trace[Modular.Match] "rhss : {rhss}"
+  trace[Gemel.Match] "lhss : {← lhss.mapM fun lhs => lhs.patterns.mapM fun p => p.toExpr}"
+  trace[Gemel.Match] "rhss : {rhss}"
   unless lhss.length == rhss.size do
     throwError "Internal error: number of lhs ({lhss.length}) and rhs ({rhss.size}) in generated match differ"
   let numDiscrs := discrs.size
   let matcherName ← mkAuxName `match
-  trace[Modular.Match] "matcherName : {matcherName}"
+  trace[Gemel.Match] "matcherName : {matcherName}"
   let matcherResult ← Lean.Elab.Term.mkMatcher { matcherName, matchType, lhss, discrInfos := discrs.map fun ⟨_,h⟩ => ⟨h.map Syntax.getId⟩}
-  trace[Modular.Match] "matcherResult generated"
+  trace[Gemel.Match] "matcherResult generated"
   reportMatcherResultErrors' lhss matcherResult
-  trace[Modular.Match] "errors reported"
+  trace[Gemel.Match] "errors reported"
   matcherResult.addMatcher
-  trace[Modular.Match] "matcher added"
+  trace[Gemel.Match] "matcher added"
   let motive ← forallBoundedTelescope matchType numDiscrs fun xs matchType => mkLambdaFVars xs matchType
   let r := mkApp matcherResult.matcher motive
   let r := mkAppN r (discrs.map Discr.expr)
   let r := mkAppN r rhss
-  trace[Modular.Match] "result: {r}"
+  trace[Gemel.Match] "result: {r}"
   return r
 
 structure MatchClause where
@@ -241,10 +241,10 @@ def mergeBranches (oldlhss newlhss : Array AltLHS) (oldrhss newrhss : Array Expr
         |>.2
       -- TODO this is probably too strict an equality, what if i.e one side has inaccessible terms/named patterns and the other doesn't ?
       let oldp ←  oldlhs.patterns.mapM (Pattern.toExpr $ Pattern.applyFVarSubst subst ·)
-      trace[Modular.Match] "Comparing patterns {oldp} and {newlhspatternExprs}"
+      trace[Gemel.Match] "Comparing patterns {oldp} and {newlhspatternExprs}"
       unless oldp == newlhspatternExprs do
         break
-      trace[Modular.Match] "They're the same thing !"
+      trace[Gemel.Match] "They're the same thing !"
       let newrhs := newrhss[i]!
       let oldrhs := oldrhss[i]!
       let rhs ← mergeExprs #[oldrhs,newrhs]
@@ -256,7 +256,7 @@ def mergeBranches (oldlhss newlhss : Array AltLHS) (oldrhss newrhss : Array Expr
   return (lhss,rhss)
 
 def mergeMatcherBundles (ms : Array MatcherBundle) : ModularM MatcherBundle :=
-  withTraceNode `Modular.Match (fun | .ok _ => return m!"Merging matcherBundles"
+  withTraceNode `Gemel.Match (fun | .ok _ => return m!"Merging matcherBundles"
                                     | .error e => return m!"Merging matcherBundles : {e.toMessageData}") do
   if _ : ms.size = 0 then
     throwError "Internal error: empty array of matcher bundles"
@@ -287,31 +287,32 @@ def elabModMatch (mvar : MVarId) (matchExts : Array MatchToExtend) (matchClause 
   unless matchExts.size != 0 do
     throwError "Internal error: attempted to extend the merging of 0 matchers"
   let {ref, name, alts, argNames} := matchClause
-  if ← mvar.isAssigned then throwError "Internal error: mvar {Expr.mvar mvar} for match {name} is already assigned"
+  if ← mvar.isAssigned then
+    throwError "Internal error: mvar {Expr.mvar mvar} for match {name} is already assigned"
   withRef ref do
   -- We consider the first matcher in the array to be "canonical", in that its name will be used
   let {matchName, mvar := matchmvar, originalLCtx,..} := matchExts[0]!
   unless mvar == matchmvar do
     throwError "Internal error: expected matcher to have mvar {Expr.mvar mvar} ({Expr.mvar <| ← getDelayedMVarRoot mvar}), found {Expr.mvar matchmvar} ({Expr.mvar <| ← getDelayedMVarRoot matchmvar}) instead (All matchers' mvars : {matchExts.map (Expr.mvar ·.mvar)})"
-  trace[Modular.Match] "Elaborating matcher : {name} {Expr.mvar mvar}"
+  trace[Gemel.Match] "Elaborating matcher : {name} {Expr.mvar mvar}"
   let .str _ matchName := matchName | throwError "Unexpected match name {matchName}"
   unless Name.mkSimple matchName = name do
     logWarningAt ref[0] "Unexpected user-provided match name: expected {matchName}, found {name}"
   let mut matcherBundles := #[]
-  withTraceNode `Modular.Match (fun _ => return "Generating Matcher bundles") do←
+  withTraceNode `Gemel.Match (fun _ => return "Generating Matcher bundles") do←
     for {matchName, mvar := matchmvar, originalMatch, originalLCtx, modMappedRhss} in matchExts do
       let mvarDecl ← matchmvar.getDecl
       withSetModMappedLCtx mvarDecl.lctx do←
       withLCtx' originalLCtx do←
-        trace[Modular.Match] "originalMatch : {originalMatch}"
-        trace[Modular.Match] "modMappedRhss : {modMappedRhss}"
+        trace[Gemel.Match] "originalMatch : {originalMatch}"
+        trace[Gemel.Match] "modMappedRhss : {modMappedRhss}"
         let some matcherBundle ← mkMatcherBundle originalMatch | throwError "Expected matcher, found {originalMatch} instead"
-        trace[Modular.Match] "matcherBundle generated"
+        trace[Gemel.Match] "matcherBundle generated"
         let matcherBundle ←
-          withTraceNode `Modular.Match (fun _ => return "Modmapping matcherBundle") do
+          withTraceNode `Gemel.Match (fun _ => return "Modmapping matcherBundle") do
             matcherBundle.modMap modMappedRhss
-        trace[Modular.Match] "matcherBundle modmapped"
-        trace[Modular.Match] "patterns : {alts.map (·.patterns)}"
+        trace[Gemel.Match] "matcherBundle modmapped"
+        trace[Gemel.Match] "patterns : {alts.map (·.patterns)}"
         matcherBundles := matcherBundles.push matcherBundle
   let mvarDecl ← mvar.getDecl
   withSetModMappedLCtx mvarDecl.lctx do
@@ -328,4 +329,4 @@ def elabModMatchNoClauses (mvar : MVarId) (matchExt : Array MatchToExtend) : Mod
   unless matchExt.size != 0 do
     throwError "Internal error: attempted to extend the merging of 0 matchers"
   let .str _ name := matchExt[0]!.matchName | throwError "Unexpected match name {matchExt[0]!.matchName}"
-  elabModMatch mvar matchExt ⟨.missing, .mkSimple name,#[],#[]⟩
+  elabModMatch mvar matchExt ⟨.missing, .mkSimple name, #[], #[]⟩

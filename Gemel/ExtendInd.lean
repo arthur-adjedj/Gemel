@@ -230,21 +230,21 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
   let numNewMinors := newRecVal.numMinors - numOldMinors
   let numArgs := oldRecVal.numParams + numOldMotives + numOldMinors
   let numHoles := numNewMotives + numNewMinors
-  trace[Modular.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
+  trace[Gemel.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
   let mut recArgs? := Array.replicate (numArgs + numHoles) none
   for i in [:oldRecVal.numParams + numOldMotives] do
     recArgs? := recArgs?.set! i (some (mkBVar (numArgs - i - 1)))
-  trace[Modular.Elab] "recArgs after adding motives : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding motives : {recArgs?}"
   for i in [:oldIndIdxs.length] do
     let idx := oldRecVal.numParams + numOldMotives + oldIndIdxs[i]!
     recArgs? := recArgs?.set! idx (some (mkBVar (numArgs - oldRecVal.numParams - numOldMotives - i - 1)))
-  trace[Modular.Elab] "recArgs after adding minors : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding minors : {recArgs?}"
   let mut nextHoleNum := numArgs + numHoles - 1
   for i in [:recArgs?.size] do
     if recArgs?[i]!.isNone then
       recArgs? := recArgs?.set! i (some (mkBVar nextHoleNum))
       nextHoleNum := nextHoleNum - 1
-  trace[Modular.Elab] "recArgs after adding holes : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding holes : {recArgs?}"
   unless nextHoleNum + 1 == numArgs do
     throwError "Internal bug: nextHoleNum ({nextHoleNum + 1}) != numArgs {numArgs}"
   let recArgs := recArgs?.map Option.get!
@@ -255,7 +255,7 @@ def mkRecMapping (oldRecName newRecName : Name): ModularM Unit := do
     numArgs
     numHoles
   }
-  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
+  trace[Gemel.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecVal.name recExt)
 
 def mkRecOnMapping (oldIndName newIndName : Name): ModularM Unit := do
@@ -276,21 +276,21 @@ def mkRecOnMapping (oldIndName newIndName : Name): ModularM Unit := do
   let numNewMinors := newRecVal.numMinors - numOldMinors
   let numArgs := oldRecVal.numParams + numOldMotives + oldRecVal.numIndices + 1 + numOldMinors
   let numHoles := numNewMotives + numNewMinors
-  trace[Modular.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
+  trace[Gemel.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
   let mut recArgs? := Array.replicate (numArgs + numHoles) none
   for i in [:oldRecVal.numParams + numOldMotives + oldRecVal.numIndices + 1] do
     recArgs? := recArgs?.set! i (some (mkBVar (numArgs - i - 1)))
-  trace[Modular.Elab] "recArgs after adding motives : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding motives : {recArgs?}"
   for i in [:oldIndIdxs.length] do
     let idx := oldRecVal.numParams + numOldMotives + oldRecVal.numIndices + 1 + oldIndIdxs[i]!
     recArgs? := recArgs?.set! idx (some (mkBVar (numArgs - (oldRecVal.numParams + numOldMotives + oldRecVal.numIndices + 1) - i - 1)))
-  trace[Modular.Elab] "recArgs after adding minors : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding minors : {recArgs?}"
   let mut nextHoleNum := numArgs + numHoles - 1
   for i in [:recArgs?.size] do
     if recArgs?[i]!.isNone then
       recArgs? := recArgs?.set! i (some (mkBVar nextHoleNum))
       nextHoleNum := nextHoleNum - 1
-  trace[Modular.Elab] "recArgs after adding holes : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding holes : {recArgs?}"
   unless nextHoleNum + 1 == numArgs do
     throwError "Internal bug: nextHoleNum ({nextHoleNum + 1}) != numArgs {numArgs}"
   let recArgs := recArgs?.map Option.get!
@@ -303,7 +303,7 @@ def mkRecOnMapping (oldIndName newIndName : Name): ModularM Unit := do
     numArgs
     numHoles
   }
-  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
+  trace[Gemel.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecOnName recExt)
 
 def mkCasesOnMapping (oldIndName newIndName : Name): ModularM Unit := do
@@ -324,21 +324,21 @@ def mkCasesOnMapping (oldIndName newIndName : Name): ModularM Unit := do
   let numNewMinors := newRecVal.numMinors - numOldMinors
   let numArgs := oldRecVal.numParams + 1 + oldRecVal.numIndices + 1 + numOldMinors
   let numHoles := 0 + numNewMinors
-  trace[Modular.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
+  trace[Gemel.Elab] "numArgs : {numArgs}\nnumHoles : {numHoles}"
   let mut recArgs? := Array.replicate (numArgs + numHoles) none
   for i in [:oldRecVal.numParams + 1 + oldRecVal.numIndices + 1] do
     recArgs? := recArgs?.set! i (some (mkBVar (numArgs - i - 1)))
-  trace[Modular.Elab] "recArgs after adding motives : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding motives : {recArgs?}"
   for i in [:oldIndIdxs.length] do
     let idx := oldRecVal.numParams + 1 + oldRecVal.numIndices + 1 + oldIndIdxs[i]!
     recArgs? := recArgs?.set! idx (some (mkBVar (numArgs - (oldRecVal.numParams + 1 + oldRecVal.numIndices + 1) - i - 1)))
-  trace[Modular.Elab] "recArgs after adding minors : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding minors : {recArgs?}"
   let mut nextHoleNum := numArgs + numHoles - 1
   for i in [:recArgs?.size] do
     if recArgs?[i]!.isNone then
       recArgs? := recArgs?.set! i (some (mkBVar nextHoleNum))
       nextHoleNum := nextHoleNum - 1
-  trace[Modular.Elab] "recArgs after adding holes : {recArgs?}"
+  trace[Gemel.Elab] "recArgs after adding holes : {recArgs?}"
   unless nextHoleNum + 1 == numArgs do
     throwError "Internal bug: nextHoleNum ({nextHoleNum + 1}) != numArgs {numArgs}"
   let recArgs := recArgs?.map Option.get!
@@ -351,7 +351,7 @@ def mkCasesOnMapping (oldIndName newIndName : Name): ModularM Unit := do
     numArgs
     numHoles
   }
-  trace[Modular.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
+  trace[Gemel.Elab] m!"rec extension: {oldRecVal.name} => {recExt}"
   modifyMap (·.insert oldRecOnName recExt)
 
 
@@ -415,18 +415,18 @@ meta def mkAuxConstructions (indName : Name) : MetaM Unit := do
 
 meta def elabExtension (oldIndName? : Option Name) (oldCtors : List Constructor) (extendedInd : ExtendedInd) (ref : Syntax) : ModularM (List Constructor) := do
   let newIndName := extendedInd.newIndName
-  withTraceNode `Modular.Elab (fun _ => pure m!"Elaborating extended inductive {newIndName}") do
+  withTraceNode `Gemel.Elab (fun _ => pure m!"Elaborating extended inductive {newIndName}") do
   let extendedInductive ← extendedInd.toInductiveType oldIndName? oldCtors
   -- In order to avoid name conflicts between ctors of auxiliary inductives, we first elaborate ctor names without a scope, then prepend said ctors with the right names
   let extendedInductive := {extendedInductive with ctors := extendedInductive.ctors.map fun ctor => {ctor with name := extendedInductive.name ++ ctor.name}}
-  trace[Modular.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
+  trace[Gemel.Elab] m!"extendedInductive ctors : {extendedInductive.ctors.map Constructor.type}"
   addAndCompile (.inductDecl extendedInd.levelParams extendedInd.numParams [extendedInductive] false)
   compileDecls #[newIndName]
   mkAuxConstructions newIndName
   extendedInd.addInductiveMappings oldIndName?
   addDeclarationRangesFromSyntax extendedInductive.name ref
   extendedInductive.ctors.forM (addDeclarationRangesFromSyntax ·.name ref)
-  trace[Modular.Elab] m!"modMap : {(← getMap).toList}"
+  trace[Gemel.Elab] m!"modMap : {(← getMap).toList}"
   return extendedInductive.ctors
 
 syntax (name := modular_inductive) "mod " "inductive " ident (ppSpace bracketedBinder)* "extends" term,+ ("where" ctor*)? :  modular_command
@@ -539,7 +539,7 @@ syntax bracketedExplicitBinder := "(" withoutPosition(binderIdent ppSpace ": " t
           -- newIndName
         -- else
           -- newIndName.append (.mkSimple s!"_aux{idx}")
-    -- trace[Modular.Elab] "indNames : {newIndNames}"
+    -- trace[Gemel.Elab] "indNames : {newIndNames}"
     -- let oldInd ← getConstInfoInduct oldIndName
     -- let mut oldCtors ← oldInd.ctors.mapM fun ctorName => do
       -- let ctor ← getConstInfoCtor ctorName

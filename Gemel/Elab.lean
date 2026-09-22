@@ -159,6 +159,7 @@ instance [Monad m] [MonadMatchExt m] : MonadMatchExt (ReaderT ρ m) where
     + an array of matches to extend (`addMatchExtension`, `getMatchExtensions`)
 -/
 abbrev ModularM := ReaderT LocalContext $ StateT ModularState TermElabM
+
 /-- Modularity monad. Builds on top of `CommandElabM`. Contains:
   - A local context for your modmapped term (`getModMappedLCtx`, `withSetModMappedLCtx`)
   - A state containing
@@ -260,7 +261,7 @@ mutual
             args.forM elabModularCommand
         else if k.toString == "choice" then
           elabChoiceAux args 0
-        else withTraceNode `Modular.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
+        else withTraceNode `Gemel.Elab (fun _ => return stx) (tag := stx.getKind.toString) do
           let s ← get
           let env ← getEnv
           let kNoScopes := k.eraseMacroScopes
@@ -287,11 +288,8 @@ mutual
       throwUnsupportedSyntax
 end
 
-def elabModularCommands (stxs : Array (TSyntax `modular_command)): ModularElabM Unit :=
-  stxs.forM elabModularCommand
-
 open Language in
-/-- Snapshot for incremental processing of `modular` blocks. -/
+/-- Snapshot for incremental processing of `Gemel` blocks. -/
 structure ModularBlockSnapshot extends Snapshot where
   /-- Input modular commands. -/
   cmds : Array Syntax
@@ -351,7 +349,7 @@ def elabModularBlock : CommandElab := fun stx => do
       | throwError "Failed to import modular mapping {importName}."
     st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
   let modSt := {st with name := modName, fullName, imports }
-  trace[Modular.Elab] s!"(name := {modSt.name}) (imports := {modSt.imports})"
+  trace[Gemel.Elab] s!"(name := {modSt.name}) (imports := {modSt.imports})"
   setEnv (currModState.setState (← getEnv) modSt)
 
 syntax (name := modular_command_as_command) modular_command : command
@@ -362,8 +360,8 @@ def elabModularCommand' : CommandElab := fun cmd => do
     | throwUnsupportedSyntax
   let st := currModState.getState (← getEnv)
   if st.name.isAnonymous then
-    throwError "Cannot elaborate modular command without an initialised modular state. Please place a `modular` block"
-  trace[Modular.Elab] s!"(name := {st.name})"
+    throwError "Cannot elaborate modular command without an initialised modular state. Please place a `Gemel` block"
+  trace[Gemel.Elab] s!"(name := {st.name})"
   let (_,newSt) ← elabModularCommand cmd |>.run {} |>.run st.toModularElabState
   modifyEnv (currModState.setState · {st with toModularState := {newSt with}})
 
@@ -383,82 +381,11 @@ def elabModularEndCommand' : CommandElab := fun stx => do
   modifyEnv (modStates.modifyState · fun m => m.insert st.fullName st.toModularElabState)
   modifyEnv (currModState.setState · {})
 
--- @[command_elab modular_block, incremental]
--- def elabModularBlock : CommandElab := fun stx => do
-  -- match stx with
-  -- | `(command| modular $cfg:optConfig $[$m]* ) => do
-    -- withExporting do
-    -- let currNamespace ← getCurrNamespace
-    -- trace[Modular.Elab] s!"{modStates.getState (← getEnv) |>.keys}"
-    -- let cfg ← elabModularSetup cfg
-    -- if let some snap := (← read).snap? then
-      -- let oldSnap? := do
-        -- let oldSnap ← snap.old?
-        -- oldSnap.val.get.toTyped? ModularBlockSnapshot
-      -- if snap.old?.isSome && oldSnap?.isNone then
-        -- snap.old?.forM (·.val.cancelRec)
-      -- let opts ← getOptions
-      -- let mut st : ModularElabState := {}
-      -- for name in cfg.imports do
-        -- let fullName := `_modular ++ name
-        -- let some modst := modStates.find? (← getEnv) fullName
-          -- | throwError "Failed to import modular mapping {name}."
-        -- st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
-      -- let mut outputs : Array (Command.State × ModularElabState) := #[]
-      -- let oldCmds? := oldSnap?.map (·.cmds)
-      -- let oldOutputs? := oldSnap?.map (·.outputs)
-      -- let mut reusedPrefix := true
-      -- for i in [:m.size] do
-        -- let cmd : Syntax := m[i]!
-        -- let oldCmd? := oldCmds?.bind (·[i]?)
-        -- let oldOutput? := oldOutputs?.bind (·[i]?)
-        -- if reusedPrefix && oldCmd?.any (·.eqWithInfoAndTraceReuse opts cmd) then
-          -- match oldOutput? with
-          -- | some (oldState, oldSt) =>
-            -- set oldState
-            -- st := oldSt
-            -- outputs := outputs.push (oldState, oldSt)
-          -- | none =>
-            -- reusedPrefix := false
-            -- let (_, newMap) ← elabModularCommand cmd |>.run {} |>.run st
-            -- st := newMap
-            -- outputs := outputs.push ((← get), st)
-        -- else
-          -- reusedPrefix := false
-          -- let (_, newst) ← elabModularCommand cmd |>.run {} |>.run st
-          -- st := newst
-          -- outputs := outputs.push ((← get), st)
-      -- snap.new.resolve <| .ofTyped {
-        -- diagnostics := .empty
-        -- cmds := m.map (·.raw)
-        -- outputs
-        -- : ModularBlockSnapshot
-      -- }
-      -- unless cfg.name.isAnonymous do
-        -- let (name, _) ← mkDeclName currNamespace {} cfg.name
-        -- let fullName := `_modular ++ name
-        -- liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
-        -- modifyEnv fun env => modStates.insert env fullName st
-    -- else
-      -- let mut st : ModularElabState := {}
-      -- for name in cfg.imports do
-        -- let fullName := `_modular ++ name
-        -- let some modst := modStates.find? (← getEnv) fullName
-          -- | throwError "Failed to import modular mapping {name}."
-        -- st := ⟨st.map ∪ modst.map, st.indFunctors.union modst.indFunctors⟩
-      -- let (_,endMap) ← elabModularCommands m |>.run {} |>.run st
-      -- unless cfg.name.isAnonymous do
-        -- let (name, _) ← mkDeclName currNamespace {} cfg.name
-        -- let fullName := `_modular ++ name
-        -- liftTermElabM <| mkDummyDecl fullName --for some reason, this is necessary...
-        -- modifyEnv fun env => modStates.insert env fullName endMap
-  -- | _ => throwUnsupportedSyntax
-
 initialize
-  registerTraceClass `Modular (inherited := true)
-  registerTraceClass `Modular.Elab (inherited := true)
-  registerTraceClass `Modular.Subst (inherited := true)
-  registerTraceClass `Modular.Match (inherited := true)
-  registerTraceClass `Modular.Merge (inherited := true)
+  registerTraceClass `Gemel (inherited := true)
+  registerTraceClass `Gemel.Elab (inherited := true)
+  registerTraceClass `Gemel.Subst (inherited := true)
+  registerTraceClass `Gemel.Match (inherited := true)
+  registerTraceClass `Gemel.Merge (inherited := true)
 
 end

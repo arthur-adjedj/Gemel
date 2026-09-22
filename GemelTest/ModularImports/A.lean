@@ -1,7 +1,7 @@
 import Gemel
 
-set_option trace.Modular.Elab true
-/-- trace: [Modular.Elab] (name := A1) (imports := #[]) -/
+set_option trace.Gemel.Elab true
+/-- trace: [Gemel.Elab] (name := A1) (imports := #[]) -/
 #guard_msgs in
 modular A1
   -- empty command
@@ -9,7 +9,7 @@ modular A1
 modular end A1
 namespace A
 
-/-- trace: [Modular.Elab] (name := A.A2) (imports := #[A1]) -/
+/-- trace: [Gemel.Elab] (name := A.A2) (imports := #[A1]) -/
 #guard_msgs in
 modular A2 (imports := A1)
   -- empty command

@@ -1,7 +1,7 @@
 import GemelTest.ModularImports.A
 
-set_option trace.Modular.Elab true
+set_option trace.Gemel.Elab true
 
-/-- trace: [Modular.Elab] (name := B) (imports := #[A1, A.A2]) -/
+/-- trace: [Gemel.Elab] (name := B) (imports := #[A1, A.A2]) -/
 #guard_msgs in
 modular B (imports := A1, A.A2)
