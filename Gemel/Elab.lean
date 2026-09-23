@@ -299,7 +299,7 @@ deriving TypeName
 
 open Language in
 instance : ToSnapshotTree ModularBlockSnapshot where
-  toSnapshotTree s := SnapshotTree.mk s.toSnapshot #[]
+  toSnapshotTreeM s := return SnapshotTree.mk s.toSnapshot #[]
 
 structure ModularSetup where
   name : Name := .anonymous
