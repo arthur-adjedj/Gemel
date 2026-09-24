@@ -8,7 +8,3 @@ name = "Gemel"
 
 [[lean_lib]]
 name = "GemelTest"
-
-[[require]]
-name = "Qq"
-scope = "leanprover-community"

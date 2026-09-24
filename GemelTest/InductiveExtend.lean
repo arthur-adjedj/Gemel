@@ -6,11 +6,9 @@ public import Gemel.ExtendInd
 public import Gemel.ModDef
 public import Gemel.ModularCommand
 public import Lean.Meta.Check
-public import Qq
 
 public section
 
-open Qq
 open Lean Meta Elab Command Term
 
 namespace tests
